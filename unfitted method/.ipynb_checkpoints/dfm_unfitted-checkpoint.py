@@ -6,25 +6,6 @@ from ngsolve.webgui import *
 import numpy as np
 
 def solve_dfm_unfitted(f, gD, order=1, mh=0.1):
-    """
-    解决带有非齐次Dirichlet和Neumann边界条件的elliptic问题:
-        -Δu + alpha*u = f  在域内
-        u = gD   在 dirichlet_bdr 上
-        ∂u/∂n = gN 在 neumann_bdr 上（可选）
-
-    参数：
-        f              : CoefficientFunction 或可表达右端项的表达式
-        gD             : CoefficientFunction 或表达Dirichlet边界条件的表达式
-        dirichlet_bdr  : 字符串,指定Dirichlet边界的名称,比如 "left|bottom"
-        gN             : CoefficientFunction 或表达Neumann边界条件的表达式,可选
-        neumann_bdr    : 字符串,指定Neumann边界的名称,可选
-        order          : 有限元阶数,默认2
-        mesh           : Mesh 对象,可选,不传则默认用unit_square生成
-        h              : mesh size
-
-    返回：
-        求解得到的GridFunction u
-    """
 
     # 1. Construct the mesh
     geo = OCCGeometry(unit_square_shape.Scale((0,0,0),1), dim=2)
@@ -47,14 +28,15 @@ def solve_dfm_unfitted(f, gD, order=1, mh=0.1):
     u,v = Vh.TnT()
     h = specialcf.mesh_size
     n = specialcf.normal(2)
+    n_gamma = Normalize(grad(lsetp1))
     jump_grad_u0 = (grad(u[0]) - grad(u[0].Other()))*n
     jump_grad_v0 = (grad(v[0]) - grad(v[0].Other()))*n
     jump_grad_u1 = (grad(u[1]) - grad(u[1].Other()))*n
     jump_grad_v1 = (grad(v[1]) - grad(v[1].Other()))*n
     jump_grad_u2 = (grad(u[2]) - grad(u[2].Other()))*n
     jump_grad_v2 = (grad(v[2]) - grad(v[2].Other()))*n
-    jump_u = (grad(u[0]) - grad(u[1]))*n
-    jump_v = (grad(v[0]) - grad(v[1]))*n
+    jump_u = (grad(u[0]) - grad(u[1]))*n_gamma
+    jump_v = (grad(v[0]) - grad(v[1]))*n_gamma
 
     partialOmega1 = x*(x-1/2)*y*(1-y)
     pO1 = GridFunction(H1(mesh,order=1))
@@ -92,9 +74,17 @@ def solve_dfm_unfitted(f, gD, order=1, mh=0.1):
     ah += grad(u[0]) * grad(v[0]) * dx_neg +  grad(u[1]) * grad(v[1]) * dx_pos + grad(u[2]) * grad(v[2]) * ds
     ah += ((u[0]-u[2]) * (v[0]-v[2]) + (u[1]-u[2]) * (v[1]-v[2]) )* ds
     # stabilization terms
-    ah += h * jump_grad_u0 * jump_grad_v0 * df0
-    ah += h * jump_grad_u1 * jump_grad_v1 * df1
-    ah += (h * jump_grad_u2 * jump_grad_v2 * df2 + h * jump_u * jump_v * ds)
+    # ah += h * jump_grad_u0 * jump_grad_v0 * df0
+    # ah += h * jump_grad_u1 * jump_grad_v1 * df1
+    # ah += (h * jump_grad_u2 * jump_grad_v2 * df2 + h * jump_u * jump_v * ds)
+    # stabilization terms
+    # ah += h * jump_grad_u0 * jump_grad_v0 * dx(skeleton=True,definedonelements=fh1_facets)
+    # ah += h * jump_grad_u1 * jump_grad_v1 * dx(skeleton=True,definedonelements=fh2_facets)
+    # ah += h * jump_grad_u0 * jump_grad_v0 * dx(skeleton=True,definedonelements=ba_facets)
+    # ah += h * jump_grad_u1 * jump_grad_v1 * dx(skeleton=True,definedonelements=ba_facets)
+    ah += h * jump_grad_u2 * jump_grad_v2 * dx(skeleton=True,definedonelements=ba_facets) 
+    ah += h * jump_u * jump_v * ds
+
     ah. Assemble()
     
     ## right hand side
