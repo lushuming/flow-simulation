@@ -107,14 +107,14 @@ def print_convergence_table(results):
 
 
 # Define important parameters
-order = 1
+order = 2
 endT = 1
 dt = 0.01
 # penalty parameters
 beta_u = 100 
 beta_p = 100
 # stablization paramer
-gamma_p = 1
+gamma_p = 10
 
 # physical parameters
 mu  = 1
@@ -153,7 +153,7 @@ pD = exact_p
 
 results = []
 
-for k in range(2, 5):
+for k in range(2, 6):
     h0 = 1/2**k
     fes,invmstar,f,mh,mesh = solve_biot_dg(dt, F, g, exact_u, exact_p, beta_u, beta_p, gamma_p, order, h0)
     gfu = GridFunction(fes)

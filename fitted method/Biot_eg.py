@@ -171,7 +171,7 @@ pD = exact_p
 
 results = []
 
-for k in range(2, 5):
+for k in range(2, 6):
     h0 = 1/2**k
     fes,invmstar,f,mh,mesh = solve_biot_eg(dt, F, g, exact_u, exact_p, beta_u, beta_p, gamma_p, order, h0)
     gfu = GridFunction(fes)
