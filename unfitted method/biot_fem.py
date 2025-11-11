@@ -10,7 +10,7 @@ import numpy as np
 def Stress(strain):
     return 2*mu*strain + lam*Trace(strain)*Id(2)
 
-def solve_biot_dg(dt, b, f, exact_u, exact_p, levelset, quad_mesh, mu,lam,tau_fpl,lambda_u,lambda_p,gamma_s,gamma_p,gamma_m,alpha,M,K, orderu, orderp, h=0.1):
+def solve_biot_cutfem(dt, b, f, uD, pD, levelset, quad_mesh, mu,lam,tau_fpl,lambda_u,lambda_p,gamma_s,gamma_p,gamma_m,alpha,M,K, orderu, orderp, h=0.1):
     # 1. Construct the mesh
     square = SplineGeometry()
     square.AddRectangle((-1, -1), (1, 1), bc=1)
@@ -39,10 +39,10 @@ def solve_biot_dg(dt, b, f, exact_u, exact_p, levelset, quad_mesh, mu,lam,tau_fp
     (u,p), (v,q) = fes.TnT()
     gfu = GridFunction(fes)
 
-    uD = GridFunction(U)
-    pD = GridFunction(P)
-    uD.Set(exact_u)
-    pD.Set(exact_p)
+    # uD = GridFunction(U)
+    # pD = GridFunction(P)
+    # uD.Set(exact_u)
+    # pD.Set(exact_p)
 
     # Define special variables
     h = specialcf.mesh_size
@@ -73,8 +73,8 @@ def solve_biot_dg(dt, b, f, exact_u, exact_p, levelset, quad_mesh, mu,lam,tau_fp
     # FPL stablization
     ah += tau_fpl*grad(p)*grad(q)*dx
 
-    ah += 1/dt*(1/M*p*q*dx + gamma_m*(h**3)*(grad(p)*ne - grad(p.Other())*ne)*(grad(q)*ne - grad(q.Other())*ne) * dw)
-    ah += 1/dt*alpha*(div(u)*q*dx - q*u*n*ds)
+    # ah += 1/dt*(1/M*p*q*dx + gamma_m*(h**3)*(grad(p)*ne - grad(p.Other())*ne)*(grad(q)*ne - grad(q.Other())*ne) * dw)
+    # ah += 1/dt*alpha*(div(u)*q*dx - q*u*n*ds)
 
     ah.Assemble()
     
@@ -94,10 +94,10 @@ def solve_biot_dg(dt, b, f, exact_u, exact_p, levelset, quad_mesh, mu,lam,tau_fp
     # r.h.s
     lh = LinearForm(fes)
     lh += b*v*dx - InnerProduct(uD,Stress(Sym(Grad(v)))*n)*ds + lambda_u/h*uD*v*ds
-    lh += f*q*dx - 1/dt*alpha*q*uD*n*ds - K*grad(q)*n*pD*ds + lambda_p/h*pD*q*ds
-    # lh += f*q*dx - K*grad(q)*n*pD*ds + lambda_p/h*pD*q*ds
+    # lh += f*q*dx - 1/dt*alpha*q*uD*n*ds - K*grad(q)*n*pD*ds + lambda_p/h*pD*q*ds
+    lh += f*q*dx - K*grad(q)*n*pD*ds + lambda_p/h*pD*q*ds
 
-    return fes,invmstar,lh,mh,mesh,hasneg
+    return fes,invmstar,lh,mh,mesh,dx
 
 def TimeStepping(invmstar, initial_condu = None, initial_condp = None, t0 = 0, tend = 1,
                       nsamples = 10):
@@ -150,19 +150,20 @@ quad_mesh = True
 orderu = 1
 orderp = 1
 # time step
-dt = 1e-3
-endT = dt
+# dt = 1e-4
 
 # penalty parameters
-lambda_u = 20*lam
-lambda_p = 50*K
-gamma_s = 20*lam
-gamma_p = 10*K
-
-# lambda_u = 200*lam
+# lambda_u = 20*lam
 # lambda_p = 50*K
 # gamma_s = 20*lam
 # gamma_p = 10*K
+
+lambda_u = 100
+lambda_p = 500*K
+# gamma_s = 0
+# gamma_p = 0
+gamma_s = 20*lam
+gamma_p = 10*K
 # gamma_m = 0.1/M/dt
 gamma_m = 0 
 
@@ -204,26 +205,37 @@ results = []
 
 for k in range(2, 6):
     h0 = 1/2**k
+    # h0 = 1e-2
+    # h0 = 1/128
+    # dt = 1/2**(k+2)
+    # dt = 1e-4
+    dt = h0**2
+    # endT = 1000*dt
+    endT = 0.5
     # tau_fpl = h0*h0*alpha*alpha/4/(lam+2*mu)-K*dt+h0*h0/6/M 
     # if tau_fpl < 0:
     #     tau_fpl = 0
-    tau_fpl = h0**2
-    fes,invmstar,lh,mh,mesh,hasneg = solve_biot_dg(dt, b, f, exact_u, exact_p, levelset, quad_mesh, \
+    # tau_fpl = 0.1*h0**2
+    tau_fpl = 0
+    fes,invmstar,lh,mh,mesh,dneg = solve_biot_cutfem(dt, b, f, exact_u, exact_p, levelset, quad_mesh, \
                                             mu,lam,tau_fpl,lambda_u,lambda_p,gamma_s,gamma_p,gamma_m,alpha,M,K, orderu, orderp, h0)
+    t.Set(0)
     gfu = GridFunction(fes)
     gfut,gfu = TimeStepping(invmstar, initial_condu=exact_u, initial_condp=exact_p, tend=endT, nsamples=20)
     exact_ = GridFunction(fes)
     t.Set(endT)
     exact_.components[0].Set(exact_u)
     exact_.components[1].Set(exact_p)
-    mask = IfPos(levelset,0,1)
-    # error_u = sqrt(Integrate(((gfu.components[0] - exact_u)**2), mesh, definedonelements=hasneg))
-    # error_p = sqrt(Integrate(((gfu.components[1] - exact_p)**2), mesh, definedonelements=hasneg))
-    error_u = sqrt(Integrate(((gfu.components[0] - exact_u)*mask)**2, mesh))
-    error_p = sqrt(Integrate((mask*(gfu.components[1] - exact_p))**2, mesh))
-    # error_u = sqrt(Integrate((gfu.components[0] - exact_u)**2, mesh))
-    # error_p = sqrt(Integrate((gfu.components[1] - exact_p)**2, mesh))
+    error_u = sqrt(Integrate((gfu.components[0] - exact_u)**2 * dneg, mesh))
+    error_p = sqrt(Integrate((gfu.components[1] - exact_p)**2 * dneg, mesh))
+    # mask = IfPos(levelset,0,1)
+    # error_u = sqrt(Integrate(((gfu.components[0] - exact_u)*mask)**2, mesh))
+    # error_p = sqrt(Integrate((mask*(gfu.components[1] - exact_p))**2, mesh))
     ndof = gfu.space.ndof
     results.append((h0,ndof,error_u, error_p ))
 
 print_convergence_table(results)
+mask = IfPos(levelset,0,1)
+vtk = VTKOutput(mesh,coefs=[mask*(-gfu.components[0]+exact_u),mask*(-gfu.components[1]+exact_p)],names=["uh","ph"],filename="/mnt/d/ngs_output/biot_fem",subdivision=2)
+# vtk = VTKOutput(mesh,coefs=[mask, -gfu.components[0]+exact_u,-gfu.components[1]+exact_p],names=["mask","uh","ph"],filename="/mnt/d/ngs_output/biot_fem2",subdivision=2)
+vtk.Do()

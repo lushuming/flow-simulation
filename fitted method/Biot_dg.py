@@ -8,13 +8,13 @@ import numpy as np
 def Stress(strain):
     return 2*mu*strain + lam*Trace(strain)*Id(2)
 
-def solve_biot_dg(dt, F, g, exact_u, exact_p, beta_u=10, beta_p=10, gamma_p=10, order=1, mh=0.1):
+def solve_biot_dg(dt, F, g, exact_u, exact_p, beta_u=10, beta_p=10, gamma_p=10, orderu=2, orderp=1, mh=0.1):
     # 1. Construct the mesh
     mesh = Mesh(unit_square.GenerateMesh(maxh=mh))
 
     # 2. Define the DG space 
-    U = VectorL2(mesh, order=order, dirichlet=".*", dgjumps=True) # space for velocity
-    P = L2(mesh, order=order, dirichlet=".*", dgjumps=True) # space for pressure
+    U = VectorL2(mesh, order=orderu, dirichlet=".*", dgjumps=True) # space for velocity
+    P = L2(mesh, order=orderp, dirichlet=".*", dgjumps=True) # space for pressure
     fes = U*P
     (u,p), (v,q) = fes.TnT()
     gfu = GridFunction(fes)
@@ -107,7 +107,8 @@ def print_convergence_table(results):
 
 
 # Define important parameters
-order = 2
+orderu = 1
+orderp = 1
 endT = 1
 dt = 0.01
 # penalty parameters
@@ -155,7 +156,7 @@ results = []
 
 for k in range(2, 6):
     h0 = 1/2**k
-    fes,invmstar,f,mh,mesh = solve_biot_dg(dt, F, g, exact_u, exact_p, beta_u, beta_p, gamma_p, order, h0)
+    fes,invmstar,f,mh,mesh = solve_biot_dg(dt, F, g, exact_u, exact_p, beta_u, beta_p, gamma_p, orderu, orderp, h0)
     gfu = GridFunction(fes)
     gfut,gfu = TimeStepping(invmstar,f, mh, initial_condu=exact_u, initial_condp=exact_p, tend=endT, nsamples=20)
     error_u = sqrt(Integrate((gfu.components[0] - exact_u)**2, mesh))

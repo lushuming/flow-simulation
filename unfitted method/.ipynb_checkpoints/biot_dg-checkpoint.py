@@ -25,16 +25,26 @@ def solve_biot_dg(dt, b, f, exact_u, exact_p, levelset, quad_mesh, mu,lam,tau_fp
     InterpolateToP1(levelset,lsetp1)
 
     # Cut information
+    # Element, facet and dof marking w.r.t. boundary approximation with lsetp1:
     ci = CutInfo(mesh, lsetp1)
     hasneg = ci.GetElementsOfType(HASNEG)
     hasif = ci.GetElementsOfType(IF)
-    ba_facets = GetFacetsWithNeighborTypes(mesh, a=hasneg, b=hasif)
+    # Draw(BitArrayCF(hasneg),mesh)
+    # Draw(BitArrayCF(hasif),mesh)
+    
+    # Facets for ghost penalty stabilization
+    ba_gp_facets = GetFacetsWithNeighborTypes(mesh, a=hasneg, b=hasif)
+    # Facets with parts inside the domain (for interior penalty term)
+    ba_fi_facets = GetFacetsWithNeighborTypes(mesh, a=hasneg, b=hasneg)
+
 
     # 3. Define the unfitted fem space 
-    Uhbase = VectorH1(mesh, order=orderu, dirichlet=[], dgjumps=True) # space for velocity
-    Phbase = H1(mesh, order=orderp, dirichlet=[], dgjumps=True) # space for pressure
+    Uhbase = VectorL2(mesh, order=order, dirichlet=[], dgjumps=True) # space for velocity
+    Phbase = L2(mesh, order=order, dirichlet=[], dgjumps=True) # space for pressure
+    # U = Restrict(Uhbase, GetDofsOfElements(Uhbase, ci.GetElementsOfType(HASNEG)))
     U = Compress(Uhbase, GetDofsOfElements(Uhbase, ci.GetElementsOfType(HASNEG)))
     P = Compress(Phbase, GetDofsOfElements(Phbase, ci.GetElementsOfType(HASNEG)))
+    # P = Restrict(Phbase, hasneg)
     fes = U*P
     (u,p), (v,q) = fes.TnT()
     gfu = GridFunction(fes)
@@ -51,39 +61,55 @@ def solve_biot_dg(dt, b, f, exact_u, exact_p, levelset, quad_mesh, mu,lam,tau_fp
     strain_u = Sym(Grad(u))
     strain_v = Sym(Grad(v))
 
+    # Define the jumps and the averages
+    jump_u = u - u.Other()
+    jump_v = v - v.Other()
+    jump_p = p - p.Other()
+    jump_q = q - q.Other()
+    mean_stress_u = 0.5*(Stress(Sym(Grad(u)))+Stress(Sym(Grad(u.Other()))))*n
+    mean_stress_v = 0.5*(Stress(Sym(Grad(v)))+Stress(Sym(Grad(v.Other()))))*n
+    mean_dpdn = 0.5*K*(grad(p)+grad(p.Other()))*n
+    mean_dqdn = 0.5*K*(grad(q)+grad(q.Other()))*n
+    mean_p = 0.5*(p + p.Other())
+    mean_q = 0.5*(q + q.Other()) 
+
     # integration domains:
+    # Element-wise integrals
     dx = dCut(lsetp1, NEG, definedonelements=hasneg, deformation=deformation)
+    # Interior skeleton integrals:
+    dk = dCut(lsetp1, NEG, skeleton=True, definedonelements=ba_fi_facets,
+              deformation=deformation)
+    # Domain boundary integrals
     ds = dCut(lsetp1, IF, definedonelements=hasif, deformation=deformation)
-    dw = dFacetPatch(definedonelements=ba_facets, deformation=deformation)
+    # Ghost penalty integrals
+    dw = dFacetPatch(definedonelements=ba_gp_facets, deformation=deformation)
     
     # 4. Define bilinear form
     ah = BilinearForm(fes)
     # Au
     ah += 2*mu*InnerProduct(strain_u,strain_v)*dx + lam*div(u)*div(v)*dx \
+            - (InnerProduct(mean_stress_u,jump_v) + InnerProduct(mean_stress_v,jump_u) - lambda_u/h*InnerProduct(jump_u,jump_v))*dk \
             - (InnerProduct(Stress(strain_u)*n,v) + InnerProduct(Stress(strain_v)*n,u) - lambda_u/h*InnerProduct(u,v))*ds
     # order=1 i_s 
     ah += gamma_s * h * InnerProduct(Grad(u)*ne - Grad(u.Other())*ne,Grad(v)*ne - Grad(v.Other())*ne) * dw
     # -B
-    ah += -alpha*(div(v)*p*dx  - p*v*n*ds)
+    ah += -alpha*(div(v)*p*dx  - mean_p*jump_v*n*dk - p*v*n*ds)
     # Ap
     ah += K*grad(p)*grad(q)*dx \
+            - (mean_dpdn*jump_q + mean_dqdn*jump_p - lambda_p/h*jump_p*jump_q)*dk \
             - (K*grad(p)*n*q + K*grad(q)*n*p - lambda_p/h*p*q)*ds
     # order=1 i_p 
     ah += gamma_p * h * (grad(p)*ne - grad(p.Other())*ne)*(grad(q)*ne - grad(q.Other())*ne) * dw
     # FPL stablization
     ah += tau_fpl*grad(p)*grad(q)*dx
-
-    ah += 1/dt*(1/M*p*q*dx + gamma_m*(h**3)*(grad(p)*ne - grad(p.Other())*ne)*(grad(q)*ne - grad(q.Other())*ne) * dw)
-    ah += 1/dt*alpha*(div(u)*q*dx - q*u*n*ds)
-
+    
     ah.Assemble()
     
     mh = BilinearForm(fes)
     # C
     mh += 1/M*p*q*dx + gamma_m*(h**3)*(grad(p)*ne - grad(p.Other())*ne)*(grad(q)*ne - grad(q.Other())*ne) * dw
     # B^T
-    mh += alpha*(div(u)*q*dx - q*u*n*ds)
-    # mh += alpha*div(u)*q*dx
+    mh += alpha*(div(u)*q*dx - mean_q*jump_u*n*dk- q*u*n*ds)
     mh.Assemble()
     
     mstar = mh.mat.CreateMatrix()
@@ -94,10 +120,9 @@ def solve_biot_dg(dt, b, f, exact_u, exact_p, levelset, quad_mesh, mu,lam,tau_fp
     # r.h.s
     lh = LinearForm(fes)
     lh += b*v*dx - InnerProduct(uD,Stress(Sym(Grad(v)))*n)*ds + lambda_u/h*uD*v*ds
-    lh += f*q*dx - 1/dt*alpha*q*uD*n*ds - K*grad(q)*n*pD*ds + lambda_p/h*pD*q*ds
-    # lh += f*q*dx - K*grad(q)*n*pD*ds + lambda_p/h*pD*q*ds
+    lh += f*q*dx - alpha*q*uD*n*ds - K*grad(q)*n*pD*ds + lambda_p/h*pD*q*ds
 
-    return fes,invmstar,lh,mh,mesh,hasneg
+    return fes,invmstar,lh,mh,mesh
 
 def TimeStepping(invmstar, initial_condu = None, initial_condp = None, t0 = 0, tend = 1,
                       nsamples = 10):
@@ -110,7 +135,7 @@ def TimeStepping(invmstar, initial_condu = None, initial_condp = None, t0 = 0, t
     gfut = GridFunction(gfu.space,multidim=0) #存储所有采样时间步的结果，多维 GridFunction
     gfut.AddMultiDimComponent(gfu.vec)
     while time <  tend + 1e-7:
-        t.Set(time+dt)
+        t.Set(time)
         lh.Assemble() 
         res = lh.vec + 1/dt * mh.mat * gfu.vec
         gfu.vec.data = invmstar * res
@@ -151,18 +176,18 @@ orderu = 1
 orderp = 1
 # time step
 dt = 1e-3
-endT = dt
+endT = 10*dt
 
 # penalty parameters
-lambda_u = 20*lam
-lambda_p = 50*K
-gamma_s = 20*lam
-gamma_p = 10*K
-
-# lambda_u = 200*lam
+# lambda_u = 20*lam
 # lambda_p = 50*K
 # gamma_s = 20*lam
 # gamma_p = 10*K
+
+lambda_u = 200*lam
+lambda_p = 50*K
+gamma_s = 20*lam
+gamma_p = 10*K
 # gamma_m = 0.1/M/dt
 gamma_m = 0 
 
@@ -208,17 +233,14 @@ for k in range(2, 6):
     # if tau_fpl < 0:
     #     tau_fpl = 0
     tau_fpl = h0**2
-    fes,invmstar,lh,mh,mesh,hasneg = solve_biot_dg(dt, b, f, exact_u, exact_p, levelset, quad_mesh, \
+    fes,invmstar,lh,mh,mesh = solve_biot_dg(dt, b, f, exact_u, exact_p, levelset, quad_mesh, \
                                             mu,lam,tau_fpl,lambda_u,lambda_p,gamma_s,gamma_p,gamma_m,alpha,M,K, orderu, orderp, h0)
     gfu = GridFunction(fes)
     gfut,gfu = TimeStepping(invmstar, initial_condu=exact_u, initial_condp=exact_p, tend=endT, nsamples=20)
     exact_ = GridFunction(fes)
-    t.Set(endT)
     exact_.components[0].Set(exact_u)
     exact_.components[1].Set(exact_p)
     mask = IfPos(levelset,0,1)
-    # error_u = sqrt(Integrate(((gfu.components[0] - exact_u)**2), mesh, definedonelements=hasneg))
-    # error_p = sqrt(Integrate(((gfu.components[1] - exact_p)**2), mesh, definedonelements=hasneg))
     error_u = sqrt(Integrate(((gfu.components[0] - exact_u)*mask)**2, mesh))
     error_p = sqrt(Integrate((mask*(gfu.components[1] - exact_p))**2, mesh))
     # error_u = sqrt(Integrate((gfu.components[0] - exact_u)**2, mesh))
