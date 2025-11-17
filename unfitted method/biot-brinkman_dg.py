@@ -40,8 +40,8 @@ def solve_biotbrinkman_dg(tau,levelset, h0, quad_mesh, order_eta, order_u,order_
     # 3. Construct the unfitted DG space 
     Ehbase = VectorL2(mesh, order=order_eta, dirichlet=[], dgjumps=True) # space for displacement
     Uhbase = VectorL2(mesh, order=order_u, dirichlet=[], dgjumps=True) # space for velocity
-    Phbase = L2(mesh, order=order_p, dirichlet=[], dgjumps=True) # space for pressure 
-    # Phbase = H1(mesh, order=order_p, dirichlet=[], dgjumps=True) # space for pressure 
+    # Phbase = L2(mesh, order=order_p, dirichlet=[], dgjumps=True) # space for pressure 
+    Phbase = H1(mesh, order=order_p, dirichlet=[], dgjumps=True) # space for pressure 
     E = Compress(Ehbase, GetDofsOfElements(Ehbase, ci.GetElementsOfType(HASNEG)))
     U = Compress(Uhbase, GetDofsOfElements(Uhbase, ci.GetElementsOfType(HASNEG)))
     P = Compress(Phbase, GetDofsOfElements(Phbase, ci.GetElementsOfType(HASNEG)))
@@ -78,6 +78,8 @@ def solve_biotbrinkman_dg(tau,levelset, h0, quad_mesh, order_eta, order_u,order_
               deformation=deformation)
     ds = dCut(lsetp1, IF, definedonelements=hasif, deformation=deformation)
     dw = dFacetPatch(definedonelements=ba_facets, deformation=deformation)
+    # dw = dCut(lsetp1, NEG, skeleton=True, definedonelements=ba_facets,
+        #   deformation=deformation)
    
     # 4. Define bilinear form
     Ah = BilinearForm(fes)
@@ -116,7 +118,11 @@ def solve_biotbrinkman_dg(tau,levelset, h0, quad_mesh, order_eta, order_u,order_
     
     Mh = BilinearForm(fes)
     # M
-    Mh += s0*p*q*domega + gamma_m*(h**3)*(grad(p)*ne - grad(p.Other())*ne)*(grad(q)*ne - grad(q.Other())*ne) * dw
+    Mh += s0*p*q*domega
+    # Mh += gamma_m*(h)*(grad(p)- grad(p.Other()))*(grad(q) - grad(q.Other())) * dw
+    # Mh += gamma_m*(h**3)*(grad(p)*ne - grad(p.Other())*ne)*(grad(q)*ne - grad(q.Other())*ne) * dw
+    # Mh += gamma_m*h*jump_p*jump_q * dw
+    Mh += gamma_m*(h**3)*(grad(p) - grad(p.Other()))*(grad(q) - grad(q.Other())) * dw
     
     # -Be
     Mh += alpha*(div(eta)*q*domega - mean_q*jump_eta*ne*dk - q*eta*n*ds)
@@ -179,11 +185,11 @@ def print_convergence_table(results):
 mu  = 10
 lam = 10
 alpha = 1
-# alpha = 0
+# alpha = 1
 K = 1 # k^-1
 nu = 1
-# s0 = 10
-s0 = 1e-2
+# s0 = 100
+s0 = 1e-3
 
 quad_mesh = False
 
@@ -193,18 +199,19 @@ order_u = 2
 order_p = 1
 
 # penalty parameters
-# p2-p2-p1 (200,200,0,0,0,0,0.1)
-beta_eta = 200
+# p2-p2-p1 (400,200,0,0,0,1/dt,0.1)
+beta_eta = 400
 beta_u = 200
 
 # stabilization 
 tau_p = 0.1
+# tau_p = 0
 
 # ghost penalty parameters
 gamma_s = 0
 gamma_u = 0
 gamma_p = 0
-gamma_m = 0
+gamma_m = 1e8
 
 
 # set up the analytical solution
@@ -251,7 +258,7 @@ pD = exact_p
 levelset = sqrt(x**2 + y**2) - 0.5
 
 results = []
-tau = 1e-6
+tau = 1e-6 # dt
 # endT = 1000*tau
 # Hrange = [0.2,0.15, 0.1, 0.05]
 for k in range(2, 6):
@@ -260,7 +267,7 @@ for k in range(2, 6):
     # tau = 1/2**(k+2)
     # h0 = 1/100
     # tau = h0**3
-    # endT = 1/4
+    # endT = 1/32
     endT = 1*tau
     fes,invmstar,lh,Mh,mesh,domega = solve_biotbrinkman_dg(tau,levelset, h0, quad_mesh, order_eta, order_u,order_p, fe, fm,fp, etaD, uD, \
                                alpha,K,mu,lam,beta_eta,beta_u,gamma_s,gamma_u,gamma_p,gamma_m,tau_p)

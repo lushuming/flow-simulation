@@ -26,7 +26,7 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
                                       discontinuous_qn=True)
     deformation = lsetmeshadap.CalcDeformation(levelset)
     lsetp1 = lsetmeshadap.lset_p1
-    InterpolateToP1(levelset,lsetp1)
+    # InterpolateToP1(levelset,lsetp1)
 
     # Element, facet and dof marking w.r.t. boundary approximation with lsetp1:
     ci = CutInfo(mesh, lsetp1)
@@ -52,6 +52,7 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
 
     # Define special variables
     n = 1.0 / Norm(grad(lsetp1)) * grad(lsetp1)
+    # n = specialcf.normal(2)
     ne = specialcf.normal(2) # normal vectors on faces
     h = specialcf.mesh_size  
     
@@ -171,7 +172,7 @@ alpha = 1
 K = 1 # k^-1
 nu = 1
 # s0 = 10
-s0 = 1e-2
+s0 = 1e-5
 
 quad_mesh = False
 
@@ -182,7 +183,7 @@ order_p = 1
 
 # penalty parameters
 # p2-p2-p1 (200,200,0,0,1,0,0.1)
-beta_eta = 200
+beta_eta = 400
 beta_u = 200
 # ghost penalty parameters
 gamma_s = 0

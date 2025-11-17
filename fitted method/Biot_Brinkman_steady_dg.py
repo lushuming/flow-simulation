@@ -113,16 +113,16 @@ def print_convergence_table(results):
 
 # Define important parameters
 # mu = 10, lambda = 10  (无 locking 现象)
-mu  = 1
+mu  = 10
 lam = 10
-alpha = 1
+alpha = 0
 K = 1 # k^-1
 nu = 1
 # s0 = 0
-s0 = 1e-5
+s0 = 1e-2
 
 
-quad_mesh = True
+quad_mesh = False
 # Finite element space order
 order_eta = 2
 order_u = 2
