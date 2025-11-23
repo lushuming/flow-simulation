@@ -1,0 +1,19 @@
+# Core scientific Python packages
+numpy
+scipy
+matplotlib
+sympy
+
+# Jupyter ecosystem
+jupyter
+notebook
+ipywidgets
+
+# Mesh & FEM related
+meshio
+pygmsh
+ngsolve
+xfem
+
+# Optional / visualization
+pyvista

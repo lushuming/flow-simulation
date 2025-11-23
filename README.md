@@ -1,18 +1,54 @@
-# Fractured Media Flow – XFEM/EDFM/DG Models
+# Fractured Flow Simulation
 
-This repository contains implementations of:
-- Unfitted Poisson solvers (XFEM)
-- Discontinuous Galerkin (DG) Poisson / Stokes / Biot / Brinkman models
-- Embedded Discrete Fracture Model (EDFM)
-- Discrete Fracture Model (DFM)
-- Interface problems based on level sets
+This is my personal project for simulating flow in fractured porous media. It's mainly Python + Jupyter Notebook experiments, with both fitted mesh and unfitted mesh methods.
 
-## Structure
-- notebooks/: Demonstration notebooks
-- src/: Reusable Python modules (XFEM, DG, Brinkman, DFM, EDFM)
-- examples/: Minimal runnable examples
+---
 
-## notes/
-This folder contains reading notes, derivations, and research logs.
-These documents help track the development of the project and summarize key
-ideas from the literature on XFEM, EDFM, DG methods, and flow in fractured media.
+## Project Structure
+
+```
+fractured-flow-simulation/
+├── README.md
+├── notebooks/         # Experiment notebooks
+│   ├── fitted/        # Fitted mesh examples
+│   └── unfitted/      # Unfitted mesh examples
+├── src/               # Python source code (including convergence order checks)
+│   ├── fitted/
+│   └── unfitted/
+├── notes/             # Personal research notes and derivations
+└── requirements.txt   # Python dependencies
+```
+
+---
+
+## Quick Start
+
+1. Clone the repository:
+
+```bash
+git clone https://github.com/lushuming/flow-simulation.git
+cd flow-simulation
+```
+
+2. Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+3. Open notebooks in the `notebooks/` folder and run them to see the results.
+
+---
+
+## About the Folders
+
+* **notebooks/fitted/** : experiments using fitted mesh
+* **notebooks/unfitted/** : experiments using unfitted mesh
+* **src/** : Python implementations corresponding to notebooks
+* **notes/** : personal notes on papers about computational mathematics, etc.
+
+---
+
+## Notes
+
+* This repo is mainly for my own research and experiments; updates are ongoing.
