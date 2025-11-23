@@ -1,0 +1,6 @@
+# 忽略 Jupyter Notebook checkpoint 文件
+.ipynb_checkpoints/
+
+# 忽略 Python 缓存文件
+__pycache__/
+*.pyc
