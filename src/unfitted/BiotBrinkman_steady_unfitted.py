@@ -22,7 +22,7 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     mesh = Mesh(ngmesh)
 
     # 2.  Higher order level set approximation
-    lsetmeshadap = LevelSetMeshAdaptation(mesh, order=2, threshold=0.1,
+    lsetmeshadap = LevelSetMeshAdaptation(mesh, order=2, threshold=10,
                                       discontinuous_qn=True)
     deformation = lsetmeshadap.CalcDeformation(levelset)
     lsetp1 = lsetmeshadap.lset_p1
@@ -42,8 +42,8 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     # 3. Construct the unfitted DG space 
     Ehbase = VectorL2(mesh, order=order_eta, dirichlet=[], dgjumps=True) # space for displacement
     Uhbase = VectorL2(mesh, order=order_u, dirichlet=[], dgjumps=True) # space for velocity
-    Phbase = L2(mesh, order=order_p, dirichlet=[], dgjumps=True) # space for pressure 
-    # Phbase = H1(mesh, order=order_p, dirichlet=[], dgjumps=True) # space for pressure 
+    Phbase = H1(mesh, order=order_p, dirichlet=[], dgjumps=True) # space for pressure 
+    # Phbase = L2(mesh, order=order_p, dirichlet=[], dgjumps=True) # space for pressure  
     E = Compress(Ehbase, GetDofsOfElements(Ehbase, ci.GetElementsOfType(HASNEG)))
     U = Compress(Uhbase, GetDofsOfElements(Uhbase, ci.GetElementsOfType(HASNEG)))
     P = Compress(Phbase, GetDofsOfElements(Phbase, ci.GetElementsOfType(HASNEG)))
@@ -90,8 +90,11 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
             - (InnerProduct(mean_stress_eta,jump_kxi) + InnerProduct(mean_stress_kxi,jump_eta) - beta_eta/h*InnerProduct(jump_eta,jump_kxi))*dk \
             - (InnerProduct(Stress(Sym(Grad(eta)))*n,kxi) + InnerProduct(Stress(Sym(Grad(kxi)))*n,eta) - beta_eta/h*InnerProduct(eta,kxi))*ds
     # order=1 i_s 
-    Ah += gamma_s * h * InnerProduct(Grad(eta)*ne - Grad(eta.Other())*ne,Grad(kxi)*ne - Grad(kxi.Other())*ne) * dw
-    
+    # Ah += gamma_s * h * InnerProduct(Grad(eta)*ne - Grad(eta.Other())*ne,Grad(kxi)*ne - Grad(kxi.Other())*ne) * dw
+    # Ah += gamma_s * h * InnerProduct(Grad(eta) - Grad(eta.Other()),Grad(kxi) - Grad(kxi.Other())) * dw
+    Ah += gamma_s * InnerProduct(Grad(eta) - Grad(eta.Other()),Grad(kxi) - Grad(kxi.Other())) * dw
+    Ah += gamma_s / (h**2) * (eta - eta.Other()) * (kxi - kxi.Other()) * dw
+
     # Be
     Ah += -alpha*(div(kxi)*p*domega - mean_p*jump_kxi*ne*dk - p*kxi*n*ds)
     
@@ -102,7 +105,9 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
             - nu*(InnerProduct(Grad(u)*n,v) + InnerProduct(Grad(v)*n,u) - beta_u/h*InnerProduct(u,v))*ds\
             + K*InnerProduct(u,v)*domega
     # ghost penalty for velocity
-    Ah += gamma_u * h * InnerProduct(Grad(u)*ne - Grad(u.Other())*ne,Grad(v)*ne - Grad(v.Other())*ne) * dw
+    # Ah += gamma_u * h * InnerProduct(Grad(u)*ne - Grad(u.Other())*ne,Grad(v)*ne - Grad(v.Other())*ne) * dw
+    Ah += gamma_u * InnerProduct(Grad(u) - Grad(u.Other()),Grad(v) - Grad(v.Other())) * dw
+    Ah += gamma_u / (h**2) * (u - u.Other()) * (v - v.Other()) * dw
     
     
      # Bm 
@@ -112,7 +117,10 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     Ah += div(u)*q*domega - mean_q*jump_u*ne*dk - q*u*n*ds
     
     # order=1 i_p 
-    Ah += gamma_p * h * (grad(p)*ne - grad(p.Other())*ne)*(grad(q)*ne - grad(q.Other())*ne) * dw
+    # Ah += gamma_p * h * (grad(p)*ne - grad(p.Other())*ne)*(grad(q)*ne - grad(q.Other())*ne) * dw
+    # Ah += gamma_p / (h**2) * jump_p * jump_q * dw
+    Ah += gamma_p * (h**3) * (grad(p)*ne - grad(p.Other())*ne)*(grad(q)*ne - grad(q.Other())*ne) * dk
+
     
     # M
     Ah += s0*p*q*domega + gamma_m*(h**3)*(grad(p)*ne - grad(p.Other())*ne)*(grad(q)*ne - grad(q.Other())*ne) * dw
@@ -121,7 +129,7 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     Ah += alpha*(div(eta)*q*domega - mean_q*jump_eta*ne*dk - q*eta*n*ds)
     
     # stabilization
-    Ah += tau_p*h*jump_p*jump_q*dk
+    Ah += tau_p*h*grad(jump_p)*grad(jump_q)*dk
     Ah.Assemble()
 
 
@@ -145,34 +153,58 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     error_eta = sqrt(Integrate((gfu.components[0] - exact_eta)**2* domega, mesh))
     error_u = sqrt(Integrate((gfu.components[1] - exact_u)**2 * domega, mesh))
     error_p = sqrt(Integrate((gfu.components[2] - exact_p)**2 * domega, mesh))
+
+    gff = GridFunction(fes)
+    gff.components[0].Set(exact_eta)
+    gff.components[1].Set(exact_u)
+
+    grad_error_eta = Grad(gfu.components[0] - gff.components[0])
+    grad_error_u = Grad(gfu.components[1] - gff.components[1])
+
+    error_eta_H1 = sqrt(Integrate(InnerProduct(grad_error_eta,grad_error_eta)* domega, mesh))
+    error_u_H1 = sqrt(Integrate(InnerProduct(grad_error_u,grad_error_u)*  domega, mesh))
     
 
-    return error_eta, error_u,error_p, gfu.space.ndof
+    return error_eta, error_u,error_p, gfu.space.ndof, error_eta_H1,error_u_H1
+
+# def print_convergence_table(results):
+#     print(f"{'h':>8} | {'DoFs':>8} |  {'Error_eta.':>12} | {'Order':>6} | {'Error_u.':>12}  | {'Order':>6} | {'Error_p':>12} | {'Order':>6}")
+#     print("-" * 70)
+#     for i, (h,dofs,error_eta,error_u,error_p) in enumerate(results):
+#         if i == 0:
+#             print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {'-':>6} |{error_u:12.4e}| {'-':>6}| {error_p:12.4e} | {'-':>6}")
+#         else:
+#             prev_h,_,prev_error_eta, prev_error_u,prev_error_p = results[i-1]
+#             rate_eta = (np.log(prev_error_eta) - np.log(error_eta)) / (np.log(prev_h) - np.log(h))
+#             rate_u = (np.log(prev_error_u) - np.log(error_u)) / (np.log(prev_h) - np.log(h))
+#             rate_p = (np.log(prev_error_p) - np.log(error_p)) / (np.log(prev_h) - np.log(h))
+#             print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {rate_eta:6.2f} |{error_u:12.4e}| {rate_u:6.2f} | {error_p:12.4e} | {rate_p:6.2f}")
 
 def print_convergence_table(results):
-    print(f"{'h':>8} | {'DoFs':>8} |  {'Error_eta.':>12} | {'Order':>6} | {'Error_u.':>12}  | {'Order':>6} | {'Error_p':>12} | {'Order':>6}")
+    print(f"{'h':>8} | {'DoFs':>8} |  {'Error_eta_L2.':>12} | {'Order':>6} |  {'Error_eta_H1.':>12} | {'Order':>6}  | {'Error_u_L2.':>12}  | {'Order':>6} |{'Error_u_H1.':>12}  | {'Order':>6}| {'Error_p':>12} | {'Order':>6}")
     print("-" * 70)
-    for i, (h,dofs,error_eta,error_u,error_p) in enumerate(results):
+    for i, (h,dofs,error_eta,error_eta_H1,error_u,error_u_H1,error_p) in enumerate(results):
         if i == 0:
-            print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {'-':>6} |{error_u:12.4e}| {'-':>6}| {error_p:12.4e} | {'-':>6}")
+            print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} |  {'-':>6} | {error_eta_H1:12.4e} |  {'-':>6} | {error_u:12.4e}| {'-':>6}| {error_u_H1:12.4e}| {'-':>6}  | {error_p:12.4e} | {'-':>6}")
         else:
-            prev_h,_,prev_error_eta, prev_error_u,prev_error_p = results[i-1]
-            rate_eta = (np.log(prev_error_eta) - np.log(error_eta)) / (np.log(prev_h) - np.log(h))
-            rate_u = (np.log(prev_error_u) - np.log(error_u)) / (np.log(prev_h) - np.log(h))
+            prev_h,_,prev_error_eta,prev_error_eta_H1, prev_error_u,prev_error_u_H1,prev_error_p = results[i-1]
+            rate_eta_L2 = (np.log(prev_error_eta) - np.log(error_eta)) / (np.log(prev_h) - np.log(h))
+            rate_eta_H1 = (np.log(prev_error_eta_H1) - np.log(error_eta_H1)) / (np.log(prev_h) - np.log(h))
+            rate_u_L2 = (np.log(prev_error_u) - np.log(error_u)) / (np.log(prev_h) - np.log(h))
+            rate_u_H1 = (np.log(prev_error_u_H1) - np.log(error_u_H1)) / (np.log(prev_h) - np.log(h))
             rate_p = (np.log(prev_error_p) - np.log(error_p)) / (np.log(prev_h) - np.log(h))
-            print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {rate_eta:6.2f} |{error_u:12.4e}| {rate_u:6.2f} | {error_p:12.4e} | {rate_p:6.2f}")
-
+            print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {rate_eta_L2:6.2f} |{error_eta_H1:12.4e} | {rate_eta_H1:6.2f}|{error_u:12.4e}| {rate_u_L2:6.2f} | {error_u_H1:12.4e}| {rate_u_H1:6.2f} | {error_p:12.4e} | {rate_p:6.2f}")
 
 
 # Define important parameters
 mu  = 10
-lam = 10
-alpha = 1
+lam = 100
+alpha = 0
 # alpha = 0
-K = 1 # k^-1
+K = 10 # k^-1
 nu = 1
 # s0 = 10
-s0 = 1e-5
+s0 = 1e-2
 
 quad_mesh = False
 
@@ -182,15 +214,15 @@ order_u = 2
 order_p = 1
 
 # penalty parameters
-# p2-p2-p1 (200,200,0,0,1,0,0.1)
-beta_eta = 400
+# p2-p2-p1 (200,200,10,10,0.1,0,0)
+beta_eta = 200
 beta_u = 200
 # ghost penalty parameters
-gamma_s = 0
-gamma_u = 0
-gamma_p = 0
+gamma_s = 10
+gamma_u = 10
+gamma_p = 0.1
 gamma_m = 0
-tau_p = 0.1
+tau_p = 0
 
 # Manufactured exact solution for monitoring the error
 u_x = sin(pi*x) * cos(pi*y)
@@ -231,14 +263,16 @@ uD = exact_u
 pD = exact_p
 
 # Set level set function
-levelset = sqrt(x**2 + y**2) - 0.5
+levelset = sqrt(x**2 + y**2) - 1/2
 
 results = []
 
-for k in range(2, 6):
+for k in range(2, 7):
     h0 = 1/2**k
-    error_eta, error_u,error_p,ndof = solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p, fe, fm,fp, exact_eta, exact_u, \
+    error_eta, error_u,error_p, ndof, error_eta_H1,error_u_H1 = solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p, fe, fm,fp, exact_eta, exact_u, \
                                                               exact_p,alpha,K,mu,lam,beta_eta,beta_u,gamma_s,gamma_u,gamma_p,gamma_m,tau_p)
-    results.append((h0,ndof,error_eta,error_u,error_p))
+    # error_eta, error_u,error_p,ndof = solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p, fe, fm,fp, exact_eta, exact_u, \
+    #                                                           exact_p,alpha,K,mu,lam,beta_eta,beta_u,gamma_s,gamma_u,gamma_p,gamma_m,tau_p)
+    results.append((h0,ndof,error_eta,error_eta_H1,error_u,error_u_H1,error_p))
 
 print_convergence_table(results)

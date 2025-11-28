@@ -21,7 +21,8 @@ def solve_biotBrinkman_steady_dg(h0, order_eta, order_u,order_p, fe, fm,fp, exac
 
     E = VectorL2(mesh, order=order_eta, dirichlet=[], dgjumps=True) # space for displacement
     U = VectorL2(mesh, order=order_u, dirichlet=[], dgjumps=True) # space for velocity
-    P = L2(mesh, order=order_p, dirichlet=[], dgjumps=True) # space for pressure
+    # P = L2(mesh, order=order_p, dirichlet=[], dgjumps=True) # space for pressure
+    P = H1(mesh, order=order_p, dirichlet=[], dgjumps=True) # space for pressure 
     fes = E*U*P
     (eta,u,p), (kxi,v,q) = fes.TnT()
     
@@ -93,30 +94,56 @@ def solve_biotBrinkman_steady_dg(h0, order_eta, order_u,order_p, fe, fm,fp, exac
     error_eta = sqrt(Integrate((gfu.components[0] - exact_eta)**2, mesh))
     error_u = sqrt(Integrate((gfu.components[1] - exact_u)**2, mesh))
     error_p = sqrt(Integrate((gfu.components[2] - exact_p)**2, mesh))
+
+    gff = GridFunction(fes)
+    gff.components[0].Set(exact_eta)
+    gff.components[1].Set(exact_u)
+
+    grad_error_eta = Grad(gfu.components[0] - gff.components[0])
+    grad_error_u = Grad(gfu.components[1] - gff.components[1])
+
+    error_eta_H1 = sqrt(Integrate(InnerProduct(grad_error_eta,grad_error_eta)* dx, mesh))
+    error_u_H1 = sqrt(Integrate(InnerProduct(grad_error_u,grad_error_u)*  dx, mesh))
         
-    return error_eta, error_u, error_p, gfu.space.ndof
+    return error_eta, error_u, error_p, gfu.space.ndof, error_eta_H1,error_u_H1
+
+# def print_convergence_table(results):
+#     print(f"{'h':>8} | {'DoFs':>8} |  {'Error_eta.':>12} | {'Order':>6} | {'Error_u.':>12}  | {'Order':>6} | {'Error_p':>12} | {'Order':>6}")
+#     print("-" * 70)
+#     for i, (h,dofs,error_eta,error_u,error_p) in enumerate(results):
+#         if i == 0:
+#             print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {'-':>6} |{error_u:12.4e}| {'-':>6}| {error_p:12.4e} | {'-':>6}")
+#         else:
+#             prev_h,_,prev_error_eta, prev_error_u,prev_error_p = results[i-1]
+#             rate_eta = (np.log(prev_error_eta) - np.log(error_eta)) / (np.log(prev_h) - np.log(h))
+#             rate_u = (np.log(prev_error_u) - np.log(error_u)) / (np.log(prev_h) - np.log(h))
+#             rate_p = (np.log(prev_error_p) - np.log(error_p)) / (np.log(prev_h) - np.log(h))
+#             print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {rate_eta:6.2f} |{error_u:12.4e}| {rate_u:6.2f} | {error_p:12.4e} | {rate_p:6.2f}")
 
 def print_convergence_table(results):
-    print(f"{'h':>8} | {'DoFs':>8} |  {'Error_eta.':>12} | {'Order':>6} | {'Error_u.':>12}  | {'Order':>6} | {'Error_p':>12} | {'Order':>6}")
+    print(f"{'h':>8} | {'DoFs':>8} |  {'Error_eta_L2.':>12} | {'Order':>6} |  {'Error_eta_H1.':>12} | {'Order':>6}  | {'Error_u_L2.':>12}  | {'Order':>6} |{'Error_u_H1.':>12}  | {'Order':>6}| {'Error_p':>12} | {'Order':>6}")
     print("-" * 70)
-    for i, (h,dofs,error_eta,error_u,error_p) in enumerate(results):
+    for i, (h,dofs,error_eta,error_eta_H1,error_u,error_u_H1,error_p) in enumerate(results):
         if i == 0:
-            print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {'-':>6} |{error_u:12.4e}| {'-':>6}| {error_p:12.4e} | {'-':>6}")
+            print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} |  {'-':>6} | {error_eta_H1:12.4e} |  {'-':>6} | {error_u:12.4e}| {'-':>6}| {error_u_H1:12.4e}| {'-':>6}  | {error_p:12.4e} | {'-':>6}")
         else:
-            prev_h,_,prev_error_eta, prev_error_u,prev_error_p = results[i-1]
-            rate_eta = (np.log(prev_error_eta) - np.log(error_eta)) / (np.log(prev_h) - np.log(h))
-            rate_u = (np.log(prev_error_u) - np.log(error_u)) / (np.log(prev_h) - np.log(h))
+            prev_h,_,prev_error_eta,prev_error_eta_H1, prev_error_u,prev_error_u_H1,prev_error_p = results[i-1]
+            rate_eta_L2 = (np.log(prev_error_eta) - np.log(error_eta)) / (np.log(prev_h) - np.log(h))
+            rate_eta_H1 = (np.log(prev_error_eta_H1) - np.log(error_eta_H1)) / (np.log(prev_h) - np.log(h))
+            rate_u_L2 = (np.log(prev_error_u) - np.log(error_u)) / (np.log(prev_h) - np.log(h))
+            rate_u_H1 = (np.log(prev_error_u_H1) - np.log(error_u_H1)) / (np.log(prev_h) - np.log(h))
             rate_p = (np.log(prev_error_p) - np.log(error_p)) / (np.log(prev_h) - np.log(h))
-            print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {rate_eta:6.2f} |{error_u:12.4e}| {rate_u:6.2f} | {error_p:12.4e} | {rate_p:6.2f}")
+            print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {rate_eta_L2:6.2f} |{error_eta_H1:12.4e} | {rate_eta_H1:6.2f}|{error_u:12.4e}| {rate_u_L2:6.2f} | {error_u_H1:12.4e}| {rate_u_H1:6.2f} | {error_p:12.4e} | {rate_p:6.2f}")
+
 
 
 
 # Define important parameters
 # mu = 10, lambda = 10  (无 locking 现象)
 mu  = 10
-lam = 10
-alpha = 0
-K = 1 # k^-1
+lam = 100
+alpha = 1
+K = 10 # k^-1
 nu = 1
 # s0 = 0
 s0 = 1e-2
@@ -129,10 +156,10 @@ order_u = 2
 order_p = 1
 
 # penalty parameters
-# p2-p2-p1 beta_eta = 200, beta_u = 200
+# p2-p2-p1 beta_eta = 200, beta_u = 100
 # p3-p3-p2 beta_eta = 300, beta_u = 300
 beta_eta = 200
-beta_u = 200
+beta_u = 100
 gamma_p = 0
 
 # Manufactured exact solution for monitoring the error
@@ -182,8 +209,9 @@ results = []
 
 for k in range(2, 6):
     h0 = 1/2**k
-    error_eta, error_u, error_p, ndof = solve_biotBrinkman_steady_dg(h0, order_eta, order_u,order_p, fe, fm,fp, exact_eta, exact_u, exact_p, \
+    error_eta, error_u, error_p, ndof, error_eta_H1,error_u_H1 = solve_biotBrinkman_steady_dg(h0, order_eta, order_u,order_p, fe, fm,fp, exact_eta, exact_u, exact_p, \
                                                                                mu,lam,beta_eta,beta_u,gamma_p,alpha,K)
-    results.append((h0,ndof,error_eta,error_u,error_p))
+    # results.append((h0,ndof,error_eta,error_u,error_p))
+    results.append((h0,ndof,error_eta,error_eta_H1,error_u,error_u_H1,error_p))
 
 print_convergence_table(results)

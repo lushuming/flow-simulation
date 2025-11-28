@@ -8,25 +8,6 @@ def Stress(strain):
     return 2*mu*strain + lam*Trace(strain)*Id(2)
 
 def solve_linear_elastic_fem(force, exact_u,order=1,mh=0.1):
-    """
-    解决带有非齐次Dirichlet和Neumann边界条件的elliptic问题:
-        -Δu + alpha*u = f  在域内
-        u = gD   在 dirichlet_bdr 上
-        ∂u/∂n = gN 在 neumann_bdr 上（可选）
-
-    参数：
-        f              : CoefficientFunction 或可表达右端项的表达式
-        gD             : CoefficientFunction 或表达Dirichlet边界条件的表达式
-        dirichlet_bdr  : 字符串,指定Dirichlet边界的名称,比如 "left|bottom"
-        gN             : CoefficientFunction 或表达Neumann边界条件的表达式,可选
-        neumann_bdr    : 字符串,指定Neumann边界的名称,可选
-        order          : 有限元阶数,默认2
-        mesh           : Mesh 对象,可选,不传则默认用unit_square生成
-        h              : mesh size
-
-    返回：
-        求解得到的GridFunction u
-    """
 
     # 1. Construct the mesh
     mesh = Mesh(unit_square.GenerateMesh(maxh=mh))
