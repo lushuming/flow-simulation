@@ -136,13 +136,15 @@ def print_convergence_table(results):
             print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {rate_eta_L2:6.2f} |{error_eta_H1:12.4e} | {rate_eta_H1:6.2f}|{error_u:12.4e}| {rate_u_L2:6.2f} | {error_u_H1:12.4e}| {rate_u_H1:6.2f} | {error_p:12.4e} | {rate_p:6.2f}")
 
 
+# 10, 100, 1, 10, 1, 0.01, P1 x P1 x P0, 
+# 10, 100, 1, 10, 1, 0.01, P2 x P2 x P1, 200, 100, 20, 10, 0.1, 0, 0
 
 
 # Define important parameters
 # mu = 10, lambda = 10  (无 locking 现象)
 mu  = 10
 lam = 100
-alpha = 1
+alpha = 0
 K = 10 # k^-1
 nu = 1
 # s0 = 0
@@ -151,16 +153,16 @@ s0 = 1e-2
 
 quad_mesh = False
 # Finite element space order
-order_eta = 2
-order_u = 2
-order_p = 1
+order_eta = 1
+order_u = 1
+order_p = 0
 
 # penalty parameters
 # p2-p2-p1 beta_eta = 200, beta_u = 100
 # p3-p3-p2 beta_eta = 300, beta_u = 300
-beta_eta = 200
-beta_u = 100
-gamma_p = 0
+beta_eta = 500
+beta_u = 500
+gamma_p = 1
 
 # Manufactured exact solution for monitoring the error
 eta_x = sin(pi*x)*sin(pi*y)

@@ -13,7 +13,7 @@ ngsglobals.msg_level = 2
 def Stress(strain):
     return 2*mu*strain + lam*Trace(strain)*Id(2)
 
-def solve_linear_elastic_dg(h0, quad_mesh, orderu,fe, exact_u, mu,lam,beta_u):
+def solve_linear_elastic_dg(h0, quad_mesh, orderu,fe, exact_u, mu,lam,beta_u,NitschType):
 
     # 1. Construct the mesh
     square = SplineGeometry()
@@ -43,14 +43,33 @@ def solve_linear_elastic_dg(h0, quad_mesh, orderu,fe, exact_u, mu,lam,beta_u):
 
     Ah = BilinearForm(U)
     # Ae
+    # Ah += 2*mu*InnerProduct(strain_u,strain_v)*dx + lam*div(u)*div(v)*dx \
+    #         - (InnerProduct(mean_stress_u,jump_v) + InnerProduct(mean_stress_v,jump_u) - beta_u/h*InnerProduct(jump_u,jump_v))*dx(skeleton=True) \
+    #         - (InnerProduct(Stress(Sym(Grad(u)))*ne,v) + InnerProduct(Stress(Sym(Grad(v)))*ne,u) - beta_u/h*InnerProduct(u,v))*ds(skeleton=True)
     Ah += 2*mu*InnerProduct(strain_u,strain_v)*dx + lam*div(u)*div(v)*dx \
-            - (InnerProduct(mean_stress_u,jump_v) + InnerProduct(mean_stress_v,jump_u) - beta_u/h*InnerProduct(jump_u,jump_v))*dx(skeleton=True) \
-            - (InnerProduct(Stress(Sym(Grad(u)))*ne,v) + InnerProduct(Stress(Sym(Grad(v)))*ne,u) - beta_u/h*InnerProduct(u,v))*ds(skeleton=True)
+            - (InnerProduct(mean_stress_u,jump_v) + InnerProduct(mean_stress_v,jump_u))*dx(skeleton=True) \
+            - (InnerProduct(Stress(Sym(Grad(u)))*ne,v) + InnerProduct(Stress(Sym(Grad(v)))*ne,u))*ds(skeleton=True)
+    # Nitsch term
+    if NitschType == 1:
+        Ah += beta_u/h*InnerProduct(jump_u,jump_v)*dx(skeleton=True) + beta_u/h*InnerProduct(u,v)*ds(skeleton=True)
+    elif NitschType == 2:
+        Ah += beta_u/h*InnerProduct(jump_u,jump_v)*dx(skeleton=True)  # interior jump
+        # Ah += beta_u/h*(2*mu*InnerProduct(jump_u,jump_v)+lam*(jump_u*ne)*(jump_v*ne))*dx(skeleton=True)  # interior jump
+        Ah += beta_u/h*(2*mu*InnerProduct(u,v) + lam*(u*ne)*(v*ne))*ds(skeleton=True) 
+
+
     Ah.Assemble()
 
     # r.h.s
     lh = LinearForm(U) 
-    lh += fe*v*dx - InnerProduct(uD,Stress(Sym(Grad(v)))*ne)*ds(skeleton=True) + beta_u/h*uD*v*ds(skeleton=True)
+    # lh += fe*v*dx - InnerProduct(uD,Stress(Sym(Grad(v)))*ne)*ds(skeleton=True) + beta_u/h*uD*v*ds(skeleton=True)
+    lh += fe*v*dx - InnerProduct(uD,Stress(Sym(Grad(v)))*ne)*ds(skeleton=True) 
+    if NitschType == 1:
+        lh += beta_u/h*uD*v*ds(skeleton=True) 
+    elif NitschType == 2:
+        lh += beta_u/h*(2*mu*InnerProduct(uD,v) + lam*(uD*ne)*(v*ne))*ds(skeleton=True) 
+
+
     lh.Assemble()
 
     gfu = GridFunction(U)
@@ -68,8 +87,13 @@ def solve_linear_elastic_dg(h0, quad_mesh, orderu,fe, exact_u, mu,lam,beta_u):
 
     gff = GridFunction(U)
     gff.Set(exact_u)
-    grad_error_u = Grad(gfu - gff)
-    error_u_H1 = sqrt(Integrate(InnerProduct(grad_error_u,grad_error_u)*  dx, mesh))
+    # grad_error_u = Grad(gfu - gff)
+    # error_u_H1 = sqrt(Integrate(InnerProduct(grad_error_u,grad_error_u)*  dx, mesh))
+    err = gfu - gff
+    strain_error = 0.5 * (Grad(err) + Grad(err).trans)
+    energy_error_sq = 0
+    energy_error_sq += Integrate(InnerProduct(strain_error, strain_error)*dx,mesh)
+    error_u_H1 = sqrt(energy_error_sq)
 
     return error_u,error_u_H1,gfu.space.ndof, conds
 
@@ -93,8 +117,9 @@ mu  = 10
 lam = 100
 
 # parameters of DG method
+NitschType = 2
 order_u = 2
-beta_u = 200
+beta_u = 1000
 
 quad_mesh = False
 
@@ -133,7 +158,7 @@ results = []
 
 for k in range(2, 6):
     h0 = 1/2**k
-    error_u,error_u_H1, ndof, conds = solve_linear_elastic_dg(h0, quad_mesh, order_u,fe, exact_u, mu,lam,beta_u)
+    error_u,error_u_H1, ndof, conds = solve_linear_elastic_dg(h0, quad_mesh, order_u,fe, exact_u, mu,lam,beta_u,NitschType)
     results.append((h0,ndof,conds,error_u,error_u_H1))
 
 print_convergence_table(results)

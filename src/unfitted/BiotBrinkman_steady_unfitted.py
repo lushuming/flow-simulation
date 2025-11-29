@@ -86,13 +86,21 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
 
     Ah = BilinearForm(fes)
     # Ae
+    # Ah += 2*mu*InnerProduct(strain_eta,strain_kxi)*domega + lam*div(eta)*div(kxi)*domega \
+    #         - (InnerProduct(mean_stress_eta,jump_kxi) + InnerProduct(mean_stress_kxi,jump_eta) - beta_eta/h*InnerProduct(jump_eta,jump_kxi))*dk \
+    #         - (InnerProduct(Stress(Sym(Grad(eta)))*n,kxi) + InnerProduct(Stress(Sym(Grad(kxi)))*n,eta) - beta_eta/h*InnerProduct(eta,kxi))*ds
     Ah += 2*mu*InnerProduct(strain_eta,strain_kxi)*domega + lam*div(eta)*div(kxi)*domega \
-            - (InnerProduct(mean_stress_eta,jump_kxi) + InnerProduct(mean_stress_kxi,jump_eta) - beta_eta/h*InnerProduct(jump_eta,jump_kxi))*dk \
-            - (InnerProduct(Stress(Sym(Grad(eta)))*n,kxi) + InnerProduct(Stress(Sym(Grad(kxi)))*n,eta) - beta_eta/h*InnerProduct(eta,kxi))*ds
+            - (InnerProduct(mean_stress_eta,jump_kxi) + InnerProduct(mean_stress_kxi,jump_eta))*dk \
+            - (InnerProduct(Stress(Sym(Grad(eta)))*n,kxi) + InnerProduct(Stress(Sym(Grad(kxi)))*n,eta))*ds
+    Ah +=  beta_eta/h*(2*mu*InnerProduct(jump_eta,jump_kxi)+lam*InnerProduct(jump_eta,ne)*InnerProduct(jump_kxi,ne)) * dk
+    Ah += beta_eta/h*(2*mu*InnerProduct(eta,kxi) + lam*InnerProduct(eta,n)*InnerProduct(kxi,n))*ds
+    
+
+
     # order=1 i_s 
     # Ah += gamma_s * h * InnerProduct(Grad(eta)*ne - Grad(eta.Other())*ne,Grad(kxi)*ne - Grad(kxi.Other())*ne) * dw
     # Ah += gamma_s * h * InnerProduct(Grad(eta) - Grad(eta.Other()),Grad(kxi) - Grad(kxi.Other())) * dw
-    Ah += gamma_s * InnerProduct(Grad(eta) - Grad(eta.Other()),Grad(kxi) - Grad(kxi.Other())) * dw
+    # Ah += gamma_s * InnerProduct(Grad(eta) - Grad(eta.Other()),Grad(kxi) - Grad(kxi.Other())) * dw
     Ah += gamma_s / (h**2) * (eta - eta.Other()) * (kxi - kxi.Other()) * dw
 
     # Be
@@ -106,7 +114,7 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
             + K*InnerProduct(u,v)*domega
     # ghost penalty for velocity
     # Ah += gamma_u * h * InnerProduct(Grad(u)*ne - Grad(u.Other())*ne,Grad(v)*ne - Grad(v.Other())*ne) * dw
-    Ah += gamma_u * InnerProduct(Grad(u) - Grad(u.Other()),Grad(v) - Grad(v.Other())) * dw
+    # Ah += gamma_u * InnerProduct(Grad(u) - Grad(u.Other()),Grad(v) - Grad(v.Other())) * dw
     Ah += gamma_u / (h**2) * (u - u.Other()) * (v - v.Other()) * dw
     
     
@@ -135,7 +143,9 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
 
     # r.h.s
     lh = LinearForm(fes) 
-    lh += fe*kxi*domega - InnerProduct(etaD,Stress(Sym(Grad(kxi)))*n)*ds + beta_eta/h*etaD*kxi*ds
+    # lh += fe*kxi*domega - InnerProduct(etaD,Stress(Sym(Grad(kxi)))*n)*ds + beta_eta/h*etaD*kxi*ds
+    lh += fe*kxi*domega - InnerProduct(etaD,Stress(Sym(Grad(kxi)))*n)*ds
+    lh += beta_eta/h*(2*mu*InnerProduct(etaD,kxi) + lam*InnerProduct(etaD,n)*InnerProduct(kxi,n))*ds
     lh += fm*v*domega - nu*InnerProduct(uD,Grad(v)*n)*ds + nu*beta_u/h*uD*v*ds
     lh += fp*q*domega - alpha*q*etaD*n*ds - q*uD*n*ds
     lh.Assemble()
@@ -154,16 +164,13 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     error_u = sqrt(Integrate((gfu.components[1] - exact_u)**2 * domega, mesh))
     error_p = sqrt(Integrate((gfu.components[2] - exact_p)**2 * domega, mesh))
 
-    gff = GridFunction(fes)
-    gff.components[0].Set(exact_eta)
-    gff.components[1].Set(exact_u)
-
-    grad_error_eta = Grad(gfu.components[0] - gff.components[0])
-    grad_error_u = Grad(gfu.components[1] - gff.components[1])
-
-    error_eta_H1 = sqrt(Integrate(InnerProduct(grad_error_eta,grad_error_eta)* domega, mesh))
-    error_u_H1 = sqrt(Integrate(InnerProduct(grad_error_u,grad_error_u)*  domega, mesh))
+    deltaeta = CF((exact_eta[0].Diff(x),exact_eta[0].Diff(y),exact_eta[1].Diff(x),exact_eta[1].Diff(y)),dims=(2, 2)).Compile()
+    grad_error_eta = Grad(gfu.components[0])-deltaeta
+    error_eta_H1 = sqrt(Integrate(InnerProduct(grad_error_eta,grad_error_eta)*domega, mesh))
     
+    deltau = CF((exact_u[0].Diff(x),exact_u[0].Diff(y),exact_u[1].Diff(x),exact_u[1].Diff(y)),dims=(2, 2)).Compile()
+    grad_error_u = Grad(gfu.components[1])-deltau
+    error_u_H1 = sqrt(Integrate(InnerProduct(grad_error_u,grad_error_u)*domega, mesh))
 
     return error_eta, error_u,error_p, gfu.space.ndof, error_eta_H1,error_u_H1
 
@@ -195,11 +202,13 @@ def print_convergence_table(results):
             rate_p = (np.log(prev_error_p) - np.log(error_p)) / (np.log(prev_h) - np.log(h))
             print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {rate_eta_L2:6.2f} |{error_eta_H1:12.4e} | {rate_eta_H1:6.2f}|{error_u:12.4e}| {rate_u_L2:6.2f} | {error_u_H1:12.4e}| {rate_u_H1:6.2f} | {error_p:12.4e} | {rate_p:6.2f}")
 
+# 10, 100, 1, 10, 1, 0.01, P2 x P2 x P1, 200, 100, 20, 10, 0.1, 0, 0
+
 
 # Define important parameters
 mu  = 10
 lam = 100
-alpha = 0
+alpha = 1
 # alpha = 0
 K = 10 # k^-1
 nu = 1
@@ -207,6 +216,7 @@ nu = 1
 s0 = 1e-2
 
 quad_mesh = False
+
 
 # DG space order
 order_eta = 2
@@ -216,11 +226,11 @@ order_p = 1
 # penalty parameters
 # p2-p2-p1 (200,200,10,10,0.1,0,0)
 beta_eta = 200
-beta_u = 200
+beta_u = 100
 # ghost penalty parameters
-gamma_s = 10
-gamma_u = 10
-gamma_p = 0.1
+gamma_s = 0
+gamma_u = 0
+gamma_p = 0
 gamma_m = 0
 tau_p = 0
 

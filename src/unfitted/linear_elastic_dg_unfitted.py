@@ -61,7 +61,7 @@ def solve_linear_elastic_unfitted(h0, quad_mesh, orderu, levelset,fe, exact_u, m
     ds = dCut(lsetp1, IF, definedonelements=hasif, deformation=deformation)
     # dw = dCut(lsetp1, NEG, skeleton=True, definedonelements=ba_facets,
     #           deformation=deformation)
-    # dw = dx(skeleton=True,definedonelements=ba_facets,deformation=deformation)
+    df = dx(skeleton=True,definedonelements=ba_facets,deformation=deformation)
     dw = dFacetPatch(definedonelements=ba_facets, deformation=deformation)
 
     # 4. Construc bilinear form and right hand side 
@@ -78,21 +78,31 @@ def solve_linear_elastic_unfitted(h0, quad_mesh, orderu, levelset,fe, exact_u, m
     if NitschType == 1:
         Ah += beta_u/h*InnerProduct(jump_u,jump_v)*dk + beta_u/h*InnerProduct(u,v)*ds
     elif NitschType == 2:
-        Ah += beta_u/h*(2*mu*InnerProduct(jump_u,jump_v)+lam*(jump_u*ne)*(jump_v*ne))*dk  # interior jump
-        Ah += beta_u/h*(2*mu*InnerProduct(u,v) + lam*(u*n)*(v*n))*ds 
+        # Ah += beta_u/h*InnerProduct(jump_u,jump_v)*dk # interior jump
+        Ah += beta_u/h*(2*mu*InnerProduct(jump_u,jump_v)+lam*InnerProduct(jump_u,ne)*InnerProduct(jump_v,ne))*dk  # interior jump
+        Ah += beta_u/h*(2*mu*InnerProduct(u,v) + lam*InnerProduct(u,n)*InnerProduct(v,n))*ds 
     elif NitschType == 3:
-        Ah += beta_u/h*(InnerProduct(jump_u,jump_v)+lam*lam*(div(u)-div(u.Other()))*(div(v)-div(v.Other())))*dk  # interior jump
+        Ah += (beta_u/h*InnerProduct(jump_u,jump_v)+lam*lam*beta_u2*h*(div(u)-div(u.Other()))*(div(v)-div(v.Other())))*dk  # interior jump
         Ah += beta_u/h*InnerProduct(u,v)*ds
+    elif NitschType == 4:
+        Ah += beta_u/h*(2*mu*InnerProduct(jump_u,jump_v)+lam*InnerProduct(jump_u,ne)*InnerProduct(jump_v,ne))*dk  # interior jump
+        Ah += beta_u/h*(2*mu*InnerProduct(u,v) + lam*InnerProduct(u,n)*InnerProduct(v,n))*ds # boundary nitsche term
+        Ah += beta_u2/h*InnerProduct(Sym(Grad(u)),Sym(Grad(v)))*ds
+
 
     
     # order=1 i_s 
-    # Ah += gamma_u * h * ((Grad(u) - Grad(u.Other()))*ne) * ((Grad(v) - Grad(v.Other()))*ne) * dw
+    # Ah += gamma_u * h * ((Grad(u) - Grad(u.Other()))*ne) * ((Grad(v) - Grad(v.Other()))*ne) * df
     # Ah += gamma_u * h * InnerProduct(Grad(u) - Grad(u.Other()),Grad(v) - Grad(v.Other())) * dw
     # Ah += gamma_u  * InnerProduct(Grad(u) - Grad(u.Other()),Grad(v) - Grad(v.Other())) * dw
     # Ah += gamma_u * h * (jump_du*ne) * (jump_dv * ne) * dw
     Ah += gamma_u / (h**2) * jump_u * jump_v * dw
+    Ah += gamma_u * InnerProduct(Sym(Grad(jump_u)),Sym(Grad(jump_v)))*dw
 
     Ah.Assemble()
+
+    # uD = GridFunction(U)
+    # uD.Set(exact_u)
 
     # r.h.s
     lh = LinearForm(U) 
@@ -100,9 +110,14 @@ def solve_linear_elastic_unfitted(h0, quad_mesh, orderu, levelset,fe, exact_u, m
     if NitschType == 1:
         lh += beta_u/h*uD*v*ds
     elif NitschType == 2:
-        lh += beta_u/h*(2*mu*InnerProduct(uD,v) + lam*(uD*n)*(v*n))*ds
+        lh += beta_u/h*(2*mu*InnerProduct(uD,v) + lam*InnerProduct(uD,n)*InnerProduct(v,n))*ds
     elif NitschType == 3:
         lh += beta_u/h*uD*v*ds
+    elif NitschType == 4:
+        lh += beta_u/h*(2*mu*InnerProduct(uD,v) + lam*InnerProduct(uD,n)*InnerProduct(v,n))*ds
+        uB = GridFunction(U)
+        uB.Set(exact_u)
+        lh += beta_u2/h*InnerProduct(Sym(Grad(uB)),Sym(Grad(v)))*ds
 
 
     lh.Assemble()
@@ -124,32 +139,38 @@ def solve_linear_elastic_unfitted(h0, quad_mesh, orderu, levelset,fe, exact_u, m
     gff.Set(exact_u)
 
     #### 目前能量范数计算不正确
-    err = gfu - gff
-    strain_error = 0.5 * (Grad(err) + Grad(err).trans)
-    # div_error = div(gfu) - div(gff)
-    energy_error_sq = 0
-    if NitschType == 1:
-        energy_error_sq += Integrate(InnerProduct(strain_error, strain_error)*domega,mesh)
-        energy_error_sq += Integrate(beta_u/h*err*err*ds,mesh)
-    elif NitschType == 2:
-        grad_error_u = Grad(err)
-        energy_error_sq += Integrate(InnerProduct(grad_error_u,grad_error_u)*  domega, mesh) # gradient error
-        # energy_error_sq += Integrate(h*InnerProduct(Stress(strain_error), Stress(strain_error))*ds,mesh) 
-        energy_error_sq += Integrate(1/h*(2*mu*err*err+lam*(err*n)**2)*ds,mesh)
+    # err = gfu - gff
+    # strain_error = 0.5 * (Grad(err) + Grad(err).trans)
+    # # div_error = div(gfu) - div(gff)
+    # energy_error_sq = 0
+    # if NitschType == 1:
+    #     energy_error_sq += Integrate(InnerProduct(strain_error, strain_error)*domega,mesh)
+    #     energy_error_sq += Integrate(h*err*err*ds,mesh)
+    # elif NitschType == 2:
+    #     grad_error_u = Grad(err)
+    #     # energy_error_sq += Integrate(InnerProduct(strain_error, strain_error)*domega,mesh)
+    #     # energy_error_sq += Integrate(InnerProduct(grad_error_u,grad_error_u)*  domega, mesh) # gradient error
+    #     energy_error_sq += Integrate(h*InnerProduct(Stress(strain_error), Stress(strain_error))*ds,mesh) 
+    #     # energy_error_sq += Integrate(h*err*err*ds,mesh)
+    #     # energy_error_sq += Integrate(1/h*(2*mu*err*err+lam*(err*n)**2)*ds,mesh)
+    # elif NitschType == 3:
+    #     energy_error_sq += Integrate(InnerProduct(strain_error, strain_error)*domega,mesh)
+    #     energy_error_sq += Integrate(h*err*err*ds,mesh)
+    # elif NitschType == 4:
+    #     energy_error_sq += Integrate(InnerProduct(strain_error, strain_error)*domega,mesh)
+    #     energy_error_sq += Integrate(h*err*err*ds,mesh)
 
     # energy_error_sq += Integrate(InnerProduct(strain_error,strain_error)*domega,mesh) + Integrate(beta_u/h*InnerProduct(gfu - gff,gfu - gff)*ds,mesh)
     # energy_error_sq += Integrate(lam* div_error*div_error*domega,mesh)
     # energy_error_sq += Integrate(InnerProduct(strain_error, strain_error)*domega,mesh)
     # energy_error_sq += Integrate(1/h*(2*mu*InnerProduct(gfu - gff,gfu - gff) + lam*((gfu - gff)*n)*((gfu - gff)*n))*ds ,mesh)
     # energy_error_sq += gamma_u  * InnerProduct(Grad(err) - Grad(gfu.Other()-gff.Other),Grad(err) - Grad(err.Other())) * dw
-    error_u_H1 = sqrt(energy_error_sq)
+    # error_u_H1 = sqrt(energy_error_sq)
     
 
-    # err = gfu - gff
-    # error_u_H1 = sqrt(Integrate(InnerProduct(Stress(Sym(Grad(err))),Stress(Sym(Grad(err))))* domega, mesh))
-    # grad_error_u = Grad(gfu - gff)
-    # error_u_H1 = sqrt(Integrate(InnerProduct(grad_error_u,grad_error_u)*  domega, mesh))
-
+    deltau = CF((exact_u[0].Diff(x),exact_u[0].Diff(y),exact_u[1].Diff(x),exact_u[1].Diff(y)),dims=(2, 2)).Compile()
+    grad_error_u = Grad(gfu)-deltau
+    error_u_H1 = sqrt(Integrate(InnerProduct(grad_error_u,grad_error_u)*domega, mesh))
     return error_u,error_u_H1,gfu.space.ndof, conds
 
 
@@ -178,10 +199,11 @@ lam = 100
 # P2, (Nitsche type 1, 1000, 20),(Nitsche type 2, 400, 20)
 nitschType = 1
 order_u = 2
-beta_u = 1000
+beta_u = 200
+beta_u2 = 0
 
 # parameter of ghost penalty
-gamma_u = 10
+gamma_u = 20
 
 quad_mesh = False
 
@@ -189,6 +211,8 @@ quad_mesh = False
 # manufactured solution
 u_x = sin(pi*x)*sin(pi*y)
 u_y = x*y*(x-1)*(y-1)
+# u_x = sin(pi*x)*sin(pi*y) + x/lam
+# u_y = cos(pi*x)*cos(pi*y) + y/lam
 
 exact_u = CF((u_x, u_y))
 
