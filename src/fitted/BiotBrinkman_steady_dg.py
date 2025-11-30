@@ -142,43 +142,53 @@ def print_convergence_table(results):
 
 # Define important parameters
 # mu = 10, lambda = 10  (无 locking 现象)
-mu  = 10
-lam = 100
+mu  = 3.3e3
+lam = 1.6e9
 alpha = 0
-K = 10 # k^-1
+# alpha = 0
+K = 1e6 # k^-1
 nu = 1
-# s0 = 0
-s0 = 1e-2
+# s0 = 10
+s0 = 1e-5
 
 
 quad_mesh = False
 # Finite element space order
-order_eta = 1
-order_u = 1
-order_p = 0
+order_eta = 2
+order_u = 2
+order_p = 1
 
 # penalty parameters
 # p2-p2-p1 beta_eta = 200, beta_u = 100
 # p3-p3-p2 beta_eta = 300, beta_u = 300
-beta_eta = 500
-beta_u = 500
-gamma_p = 1
+beta_eta = 200
+beta_u = 100
+gamma_p = 0
 
 # Manufactured exact solution for monitoring the error
-eta_x = sin(pi*x)*sin(pi*y)
-eta_y = x*y*(x-1)*(y-1)
-# u_x = 4*(x**3)*(y**4)*((x-1)**4)*((y-1)**4) + 4*(x**4)*(y**4)*((x-1)**3)*((y-1)**4)
-# u_y = 4*(x**4)*(y**3)*((x-1)**4)*((y-1)**4) + 4*(x**4)*(y**4)*((x-1)**4)*((y-1)**3)
+#---------------------Example 1 -----------------------
+# eta_x = sin(pi*x)*sin(pi*y)
+# eta_y = x*y*(x-1)*(y-1)
+# u_x = sin(pi*x) * cos(pi*y)
+# u_y = -cos(pi*x) * sin(pi*y)
+# exact_p = sin(pi*(x-y))
+
+#---------------------Example 2 -----------------------
+eta_x = -x*x*y*(2*y-1)*(x-1)*(x-1)*(y-1)
+eta_y = x*y*y*(2*x-1)*(x-1)*(y-1)*(y-1)
+u_x = x*x*y*y+exp(-y)
+u_y = -2/3*x*y**3+2-pi*sin(pi*x)
+exact_p = (pi*sin(pi*x)-2)*cos(2*pi*y)
 
 # eta_x = sin(pi*x)**2 * sin(pi*y)
 # eta_y = -sin(pi*x) * sin(pi*y)**2
-u_x = sin(pi*x) * cos(pi*y)
-u_y = -cos(pi*x) * sin(pi*y)
+# u_x = 4*(x**3)*(y**4)*((x-1)**4)*((y-1)**4) + 4*(x**4)*(y**4)*((x-1)**3)*((y-1)**4)
+# u_y = 4*(x**4)*(y**3)*((x-1)**4)*((y-1)**4) + 4*(x**4)*(y**4)*((x-1)**4)*((y-1)**3)
 # exact_p =cos(pi*x) * cos(pi*y) + 2
 
 exact_eta = CF((eta_x, eta_y))
 exact_u = CF((u_x,u_y))
-exact_p = sin(pi*(x-y))
+
 # exact_p = eta_x = sin(pi*x)*sin(pi*y)
 
 # strain tensor

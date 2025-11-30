@@ -7,6 +7,7 @@ from math import pi,e
 from numpy import linspace
 import numpy as np
 import scipy.sparse as sp
+from scipy.io import savemat
 
 
 def Stress(strain):
@@ -18,6 +19,7 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     # 1. Construct the mesh
     square = SplineGeometry()
     square.AddRectangle((-1, -1), (1, 1), bc=1)
+    # square.AddRectangle((0, 0), (1, 1), bc=1)
     ngmesh = square.GenerateMesh(maxh=h0, quad_dominated=quad_mesh)
     mesh = Mesh(ngmesh)
 
@@ -149,13 +151,7 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     lh += fm*v*domega - nu*InnerProduct(uD,Grad(v)*n)*ds + nu*beta_u/h*uD*v*ds
     lh += fp*q*domega - alpha*q*etaD*n*ds - q*uD*n*ds
     lh.Assemble()
-
     
-    # # 计算系数矩阵的条件数
-    # rows,cols,vals = ah.mat.COO()
-    # A = sp.csr_matrix((vals,(rows,cols)))
-    # conds = np.linalg.cond(A.todense())
-        
     # 5. Solve for the free dofs
     gfu = GridFunction(fes)
     gfu.vec.data = Ah.mat.Inverse() * lh.vec
@@ -171,6 +167,30 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     deltau = CF((exact_u[0].Diff(x),exact_u[0].Diff(y),exact_u[1].Diff(x),exact_u[1].Diff(y)),dims=(2, 2)).Compile()
     grad_error_u = Grad(gfu.components[1])-deltau
     error_u_H1 = sqrt(Integrate(InnerProduct(grad_error_u,grad_error_u)*domega, mesh))
+
+    print(f"The current h is {h0}, and the Dofs is {gfu.space.ndof}")
+    # 计算系数矩阵的条件数
+    rows,cols,vals = Ah.mat.COO()
+    A_scipy = sp.csr_matrix((vals,(rows,cols)))
+    # conds = np.linalg.cond(A_scipy.todense())
+    # print(conds)
+    # 变量名 'K' (Stiffness Matrix) 将在 MATLAB 中使用
+    data_to_save = {'K': A_scipy} 
+
+    # 5. 保存为 .mat 文件
+    output_filename = '/mnt/d/ngsolve_matrix/ngsolve_stiffness_matrix' + str(h0) + '.mat'
+    savemat(output_filename, data_to_save)
+
+    print(f"矩阵已成功保存到文件: {output_filename}")
+
+    kappaminus = CutRatioGF(ci)
+    kappaminus_values = kappaminus.vec.FV().NumPy()
+    positive_values = [v for v in kappaminus_values if v > 0]
+    if positive_values:
+        min_value_pythonic = min(positive_values)
+        print(f"The smallest cut ratio is: {min_value_pythonic:.2e}")
+    else:
+        print("There are no cut elements.")
 
     return error_eta, error_u,error_p, gfu.space.ndof, error_eta_H1,error_u_H1
 
@@ -202,21 +222,22 @@ def print_convergence_table(results):
             rate_p = (np.log(prev_error_p) - np.log(error_p)) / (np.log(prev_h) - np.log(h))
             print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {rate_eta_L2:6.2f} |{error_eta_H1:12.4e} | {rate_eta_H1:6.2f}|{error_u:12.4e}| {rate_u_L2:6.2f} | {error_u_H1:12.4e}| {rate_u_H1:6.2f} | {error_p:12.4e} | {rate_p:6.2f}")
 
+# 10, 100, 1, 10, 1, 0.01, P1 x P1 x P0, 200, 100, 
 # 10, 100, 1, 10, 1, 0.01, P2 x P2 x P1, 200, 100, 20, 10, 0.1, 0, 0
-
+# 10, 100, 1, 10, 1, 0.01, P2 x P2 x P1, 400, 200, 0, 0, 0, 0, 0 # 可以差不多达到收敛阶
+# 10, 100, 1, 10, 1, 0.01, P3 x P3 x P2, 400, 400, 10, 5, 0.1, 0, 0 
 
 # Define important parameters
 mu  = 10
 lam = 100
-alpha = 1
+alpha = 0
 # alpha = 0
-K = 10 # k^-1
+K = 1e6 # k^-1
 nu = 1
 # s0 = 10
-s0 = 1e-2
+s0 = 1e-5
 
 quad_mesh = False
-
 
 # DG space order
 order_eta = 2
@@ -226,24 +247,33 @@ order_p = 1
 # penalty parameters
 # p2-p2-p1 (200,200,10,10,0.1,0,0)
 beta_eta = 200
-beta_u = 100
+beta_u = 200
 # ghost penalty parameters
-gamma_s = 0
-gamma_u = 0
+gamma_s = 20
+gamma_u = 10
 gamma_p = 0
 gamma_m = 0
 tau_p = 0
 
 # Manufactured exact solution for monitoring the error
-u_x = sin(pi*x) * cos(pi*y)
-u_y = -cos(pi*x) * sin(pi*y)
-eta_x = sin(pi*x)*sin(pi*y)
-eta_y = x*y*(x-1)*(y-1)
+#---------------------Example 1 -----------------------
+# u_x = sin(pi*x) * cos(pi*y)
+# u_y = -cos(pi*x) * sin(pi*y)
+# eta_x = sin(pi*x)*sin(pi*y)
+# eta_y = x*y*(x-1)*(y-1)
+# exact_p = sin(pi*(x-y))
+
+#---------------------Example 2 -----------------------
+eta_x = -x*x*y*(2*y-1)*(x-1)*(x-1)*(y-1)
+eta_y = x*y*y*(2*x-1)*(x-1)*(y-1)*(y-1)
+u_x = x*x*y*y+exp(-y)
+u_y = -2/3*x*y**3+2-pi*sin(pi*x)
+exact_p = (pi*sin(pi*x)-2)*cos(2*pi*y)
+
+
 
 exact_eta = CF((eta_x, eta_y))
 exact_u = CF((u_x,u_y))
-exact_p = sin(pi*(x-y))
-
 
 
 # strain tensor
@@ -274,6 +304,7 @@ pD = exact_p
 
 # Set level set function
 levelset = sqrt(x**2 + y**2) - 1/2
+# levelset = (x-1/2)**2 + (y-1/2)**2 - 1/9
 
 results = []
 

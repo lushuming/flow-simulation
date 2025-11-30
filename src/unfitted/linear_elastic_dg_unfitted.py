@@ -97,7 +97,7 @@ def solve_linear_elastic_unfitted(h0, quad_mesh, orderu, levelset,fe, exact_u, m
     # Ah += gamma_u  * InnerProduct(Grad(u) - Grad(u.Other()),Grad(v) - Grad(v.Other())) * dw
     # Ah += gamma_u * h * (jump_du*ne) * (jump_dv * ne) * dw
     Ah += gamma_u / (h**2) * jump_u * jump_v * dw
-    Ah += gamma_u * InnerProduct(Sym(Grad(jump_u)),Sym(Grad(jump_v)))*dw
+    # Ah += gamma_u * InnerProduct(Sym(Grad(jump_u)),Sym(Grad(jump_v)))*dw
 
     Ah.Assemble()
 
@@ -197,13 +197,13 @@ lam = 100
 # parameters of DG method
 # P1, 500, 50
 # P2, (Nitsche type 1, 1000, 20),(Nitsche type 2, 400, 20)
-nitschType = 1
-order_u = 2
-beta_u = 200
+nitschType = 2
+order_u = 1
+beta_u = 1000
 beta_u2 = 0
 
 # parameter of ghost penalty
-gamma_u = 20
+gamma_u = 0
 
 quad_mesh = False
 
