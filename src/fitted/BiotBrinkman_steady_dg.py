@@ -142,8 +142,8 @@ def print_convergence_table(results):
 
 # Define important parameters
 # mu = 10, lambda = 10  (无 locking 现象)
-mu  = 3.3e3
-lam = 1.6e9
+mu  = 1
+lam = 1e6
 alpha = 0
 # alpha = 0
 K = 1e6 # k^-1
@@ -154,8 +154,8 @@ s0 = 1e-5
 
 quad_mesh = False
 # Finite element space order
-order_eta = 2
-order_u = 2
+order_eta = 1
+order_u = 1
 order_p = 1
 
 # penalty parameters
@@ -174,8 +174,10 @@ gamma_p = 0
 # exact_p = sin(pi*(x-y))
 
 #---------------------Example 2 -----------------------
-eta_x = -x*x*y*(2*y-1)*(x-1)*(x-1)*(y-1)
-eta_y = x*y*y*(2*x-1)*(x-1)*(y-1)*(y-1)
+eta_x = sin(pi*x)*sin(pi*y) + x/lam
+eta_y = cos(pi*x)*cos(pi*y) + y/lam
+# eta_x = -x*x*y*(2*y-1)*(x-1)*(x-1)*(y-1)
+# eta_y = x*y*y*(2*x-1)*(x-1)*(y-1)*(y-1)
 u_x = x*x*y*y+exp(-y)
 u_y = -2/3*x*y**3+2-pi*sin(pi*x)
 exact_p = (pi*sin(pi*x)-2)*cos(2*pi*y)

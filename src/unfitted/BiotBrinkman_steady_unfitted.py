@@ -24,7 +24,7 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     mesh = Mesh(ngmesh)
 
     # 2.  Higher order level set approximation
-    lsetmeshadap = LevelSetMeshAdaptation(mesh, order=2, threshold=10,
+    lsetmeshadap = LevelSetMeshAdaptation(mesh, order=order_eta, threshold=0.1,
                                       discontinuous_qn=True)
     deformation = lsetmeshadap.CalcDeformation(levelset)
     lsetp1 = lsetmeshadap.lset_p1
@@ -102,8 +102,8 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     # order=1 i_s 
     # Ah += gamma_s * h * InnerProduct(Grad(eta)*ne - Grad(eta.Other())*ne,Grad(kxi)*ne - Grad(kxi.Other())*ne) * dw
     # Ah += gamma_s * h * InnerProduct(Grad(eta) - Grad(eta.Other()),Grad(kxi) - Grad(kxi.Other())) * dw
-    # Ah += gamma_s * InnerProduct(Grad(eta) - Grad(eta.Other()),Grad(kxi) - Grad(kxi.Other())) * dw
-    Ah += gamma_s / (h**2) * (eta - eta.Other()) * (kxi - kxi.Other()) * dw
+    Ah += gamma_s * InnerProduct(Grad(eta) - Grad(eta.Other()),Grad(kxi) - Grad(kxi.Other())) * dw
+    # Ah += gamma_s / (h**2) * (eta - eta.Other()) * (kxi - kxi.Other()) * dw
 
     # Be
     Ah += -alpha*(div(kxi)*p*domega - mean_p*jump_kxi*ne*dk - p*kxi*n*ds)
@@ -228,8 +228,8 @@ def print_convergence_table(results):
 # 10, 100, 1, 10, 1, 0.01, P3 x P3 x P2, 400, 400, 10, 5, 0.1, 0, 0 
 
 # Define important parameters
-mu  = 10
-lam = 100
+mu  = 1
+lam = 1e6
 alpha = 0
 # alpha = 0
 K = 1e6 # k^-1
@@ -240,16 +240,16 @@ s0 = 1e-5
 quad_mesh = False
 
 # DG space order
-order_eta = 2
+order_eta = 1
 order_u = 2
 order_p = 1
 
 # penalty parameters
 # p2-p2-p1 (200,200,10,10,0.1,0,0)
-beta_eta = 200
+beta_eta = 10
 beta_u = 200
 # ghost penalty parameters
-gamma_s = 20
+gamma_s = 0.1
 gamma_u = 10
 gamma_p = 0
 gamma_m = 0
@@ -264,8 +264,10 @@ tau_p = 0
 # exact_p = sin(pi*(x-y))
 
 #---------------------Example 2 -----------------------
-eta_x = -x*x*y*(2*y-1)*(x-1)*(x-1)*(y-1)
-eta_y = x*y*y*(2*x-1)*(x-1)*(y-1)*(y-1)
+eta_x = sin(pi*x)*sin(pi*y) + x/lam
+eta_y = cos(pi*x)*cos(pi*y) + y/lam
+# eta_x = -x*x*y*(2*y-1)*(x-1)*(x-1)*(y-1)
+# eta_y = x*y*y*(2*x-1)*(x-1)*(y-1)*(y-1)
 u_x = x*x*y*y+exp(-y)
 u_y = -2/3*x*y**3+2-pi*sin(pi*x)
 exact_p = (pi*sin(pi*x)-2)*cos(2*pi*y)

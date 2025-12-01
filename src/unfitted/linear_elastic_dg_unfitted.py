@@ -7,13 +7,14 @@ from math import pi,e
 from numpy import linspace
 import numpy as np
 import scipy.sparse as sp
+from scipy.io import savemat
 
 ngsglobals.msg_level = 2
 
 def Stress(strain):
     return 2*mu*strain + lam*Trace(strain)*Id(2)
 
-def solve_linear_elastic_unfitted(h0, quad_mesh, orderu, levelset,fe, exact_u, mu,lam,beta_u,gamma_u,NitschType):
+def solve_linear_elastic_unfitted(h0, t0, quad_mesh, orderu, levelset,fe, exact_u, mu,lam,beta_u,gamma_u,NitschType):
 
     # 1. Construct the mesh
     square = SplineGeometry()
@@ -35,6 +36,17 @@ def solve_linear_elastic_unfitted(h0, quad_mesh, orderu, levelset,fe, exact_u, m
     # facets used for ghost penalty stabilization:
     ba_facets = GetFacetsWithNeighborTypes(mesh, a=hasneg, b=hasif)
     interior_facets = GetFacetsWithNeighborTypes(mesh, a=hasneg, b=hasneg)
+
+    ######### Add a threshhold to decide whether small cut occurs ####
+    kappaminus = CutRatioGF(ci)
+    kappaminus_values = kappaminus.vec.FV().NumPy()
+    positive_values = [v for v in kappaminus_values if v > 0]
+    min_value_pythonic = min(positive_values)
+    if min_value_pythonic > t0*h0*h0/2:
+        gamma_u = 0
+        print(f"There are no small cuts.")
+    else:
+        print("There are small cuts.")
 
     # 3. Construct the unfitted DG space 
     Uhbase = VectorL2(mesh, order=order_u, dirichlet=[], dgjumps=True) # space for displacement
@@ -65,63 +77,51 @@ def solve_linear_elastic_unfitted(h0, quad_mesh, orderu, levelset,fe, exact_u, m
     dw = dFacetPatch(definedonelements=ba_facets, deformation=deformation)
 
     # 4. Construc bilinear form and right hand side 
-
+    # main parts of Ah and lh
+    # stiffness matrix
     Ah = BilinearForm(U)
-    # Ae
-    # Ah += 2*mu*InnerProduct(strain_u,strain_v)*domega + lam*div(u)*div(v)*domega \
-    #         - (InnerProduct(mean_stress_u,jump_v) + InnerProduct(mean_stress_v,jump_u) - beta_u/h*InnerProduct(jump_u,jump_v))*dk \
-    #         - (InnerProduct(Stress(Sym(Grad(u)))*n,v) + InnerProduct(Stress(Sym(Grad(v)))*n,u) - beta_u/h*InnerProduct(u,v))*ds
     Ah += 2*mu*InnerProduct(strain_u,strain_v)*domega + lam*div(u)*div(v)*domega \
             - (InnerProduct(mean_stress_u,jump_v) + InnerProduct(mean_stress_v,jump_u))*dk \
             - (InnerProduct(Stress(Sym(Grad(u)))*n,v) + InnerProduct(Stress(Sym(Grad(v)))*n,u))*ds
-    # Nitsch term
+    # r.h.s
+    lh = LinearForm(U) 
+    lh += fe*v*domega - InnerProduct(uD,Stress(Sym(Grad(v)))*n)*ds 
+    
+    ################################# Nitsche penalty terms #################################
     if NitschType == 1:
-        Ah += beta_u/h*InnerProduct(jump_u,jump_v)*dk + beta_u/h*InnerProduct(u,v)*ds
+        Ah += beta_u/h*InnerProduct(jump_u,jump_v)*dk  # interior jump
+        Ah += beta_u/h*InnerProduct(u,v)*ds 
+        lh += beta_u/h*InnerProduct(uD,v)*ds
     elif NitschType == 2:
-        # Ah += beta_u/h*InnerProduct(jump_u,jump_v)*dk # interior jump
         Ah += beta_u/h*(2*mu*InnerProduct(jump_u,jump_v)+lam*InnerProduct(jump_u,ne)*InnerProduct(jump_v,ne))*dk  # interior jump
         Ah += beta_u/h*(2*mu*InnerProduct(u,v) + lam*InnerProduct(u,n)*InnerProduct(v,n))*ds 
+        lh += beta_u/h*(2*mu*InnerProduct(uD,v) + lam*InnerProduct(uD,n)*InnerProduct(v,n))*ds
     elif NitschType == 3:
-        Ah += (beta_u/h*InnerProduct(jump_u,jump_v)+lam*lam*beta_u2*h*(div(u)-div(u.Other()))*(div(v)-div(v.Other())))*dk  # interior jump
-        Ah += beta_u/h*InnerProduct(u,v)*ds
+        Ah += beta_u/h*InnerProduct(jump_u,jump_v)*dk  # interior jump
+        Ah += beta_u2*h*(div(u)-div(u.Other()))*(div(v)-div(v.Other()))*dk
+        Ah += beta_u/h*InnerProduct(u,v)*ds 
+        lh += beta_u/h*InnerProduct(uD,v)*ds
     elif NitschType == 4:
         Ah += beta_u/h*(2*mu*InnerProduct(jump_u,jump_v)+lam*InnerProduct(jump_u,ne)*InnerProduct(jump_v,ne))*dk  # interior jump
         Ah += beta_u/h*(2*mu*InnerProduct(u,v) + lam*InnerProduct(u,n)*InnerProduct(v,n))*ds # boundary nitsche term
         Ah += beta_u2/h*InnerProduct(Sym(Grad(u)),Sym(Grad(v)))*ds
-
-
-    
-    # order=1 i_s 
-    # Ah += gamma_u * h * ((Grad(u) - Grad(u.Other()))*ne) * ((Grad(v) - Grad(v.Other()))*ne) * df
-    # Ah += gamma_u * h * InnerProduct(Grad(u) - Grad(u.Other()),Grad(v) - Grad(v.Other())) * dw
-    # Ah += gamma_u  * InnerProduct(Grad(u) - Grad(u.Other()),Grad(v) - Grad(v.Other())) * dw
-    # Ah += gamma_u * h * (jump_du*ne) * (jump_dv * ne) * dw
-    Ah += gamma_u / (h**2) * jump_u * jump_v * dw
-    # Ah += gamma_u * InnerProduct(Sym(Grad(jump_u)),Sym(Grad(jump_v)))*dw
-
-    Ah.Assemble()
-
-    # uD = GridFunction(U)
-    # uD.Set(exact_u)
-
-    # r.h.s
-    lh = LinearForm(U) 
-    lh += fe*v*domega - InnerProduct(uD,Stress(Sym(Grad(v)))*n)*ds 
-    if NitschType == 1:
-        lh += beta_u/h*uD*v*ds
-    elif NitschType == 2:
-        lh += beta_u/h*(2*mu*InnerProduct(uD,v) + lam*InnerProduct(uD,n)*InnerProduct(v,n))*ds
-    elif NitschType == 3:
-        lh += beta_u/h*uD*v*ds
-    elif NitschType == 4:
         lh += beta_u/h*(2*mu*InnerProduct(uD,v) + lam*InnerProduct(uD,n)*InnerProduct(v,n))*ds
         uB = GridFunction(U)
         uB.Set(exact_u)
         lh += beta_u2/h*InnerProduct(Sym(Grad(uB)),Sym(Grad(v)))*ds
 
 
-    lh.Assemble()
+    ################################# ghost penalty terms #################################
+    # order=1 i_s 
+    Ah += gamma_u * h * ((Grad(u) - Grad(u.Other()))*ne) * ((Grad(v) - Grad(v.Other()))*ne) * df
+    # Ah += gamma_u * h * InnerProduct(Grad(u) - Grad(u.Other()),Grad(v) - Grad(v.Other())) * dw
+    # Ah += gamma_u  * InnerProduct(Grad(u) - Grad(u.Other()),Grad(v) - Grad(v.Other())) * dw
+    # Ah += gamma_u * h * (jump_du*ne) * (jump_dv * ne) * dw
+    # Ah += gamma_u / (h**2) * jump_u * jump_v * dw
+    # Ah += gamma_u * InnerProduct(Sym(Grad(jump_u)),Sym(Grad(jump_v)))*dw
 
+    Ah.Assemble()
+    lh.Assemble()
     gfu = GridFunction(U)
     gfu.vec.data = Ah.mat.Inverse() * lh.vec
 
@@ -171,6 +171,23 @@ def solve_linear_elastic_unfitted(h0, quad_mesh, orderu, levelset,fe, exact_u, m
     deltau = CF((exact_u[0].Diff(x),exact_u[0].Diff(y),exact_u[1].Diff(x),exact_u[1].Diff(y)),dims=(2, 2)).Compile()
     grad_error_u = Grad(gfu)-deltau
     error_u_H1 = sqrt(Integrate(InnerProduct(grad_error_u,grad_error_u)*domega, mesh))
+
+    # 计算系数矩阵的条件数
+    rows,cols,vals = Ah.mat.COO()
+    A_scipy = sp.csr_matrix((vals,(rows,cols)))
+    # conds = np.linalg.cond(A_scipy.todense())
+    # print(conds)
+    # 变量名 'K' (Stiffness Matrix) 将在 MATLAB 中使用
+    data_to_save = {'K': A_scipy} 
+
+    # 5. 保存为 .mat 文件
+    output_filename = '/mnt/d/ngsolve_matrix/linearelasticity_' + str(h0) + '_' + str(gamma_u) + '.mat'
+    savemat(output_filename, data_to_save)
+
+    print(f"矩阵已成功保存到文件: {output_filename}")
+
+
+
     return error_u,error_u_H1,gfu.space.ndof, conds
 
 
@@ -191,29 +208,43 @@ def print_convergence_table(results):
 
 # Define important parameters
 # physical parameters for linear elastic
-mu  = 10
-lam = 100
+mu  = 1
+lam = 1e6
 
 # parameters of DG method
-# P1, 500, 50
+# P1, (Nitsche type 3, 10, 1e-5*lam*lam, 10),(Nitsche type 2, 10, 0, 0.1)
+# P2, (Nitsche type 3, 60, 1e-5*lam*lam, )
 # P2, (Nitsche type 1, 1000, 20),(Nitsche type 2, 400, 20)
 nitschType = 2
-order_u = 1
-beta_u = 1000
+order_u = 2
+beta_u = 10
 beta_u2 = 0
 
 # parameter of ghost penalty
-gamma_u = 0
+gamma_u = 0.1
+t0 = 100 # threshold for small elements
 
 quad_mesh = False
 
 
-# manufactured solution
-u_x = sin(pi*x)*sin(pi*y)
-u_y = x*y*(x-1)*(y-1)
-# u_x = sin(pi*x)*sin(pi*y) + x/lam
-# u_y = cos(pi*x)*cos(pi*y) + y/lam
+########## divergence free example ##########
+# u_x = sin(pi*x) * cos(pi*y) 
+# u_y = -cos(pi*x) * sin(pi*y) 
 
+########## Example 1 ##########
+# u_x = sin(pi*x)*sin(pi*y)
+# u_y = x*y*(x-1)*(y-1)
+
+########## Example 2 ##########
+# u_x = -x*x*y*(2*y-1)*(x-1)*(x-1)*(y-1)
+# u_y = x*y*y*(2*x-1)*(x-1)*(y-1)*(y-1)
+
+########## Example 3 ##########
+u_x = sin(pi*x)*sin(pi*y) + x/lam
+u_y = cos(pi*x)*cos(pi*y) + y/lam
+
+
+# manufactured solution
 exact_u = CF((u_x, u_y))
 
 # strain tensor
@@ -239,12 +270,13 @@ uD = exact_u
 
 # Set level set function
 levelset = sqrt(x**2 + y**2) - 1/2
+# levelset = x - 1/3
 
 results = []
 
 for k in range(2, 6):
     h0 = 1/2**k
-    error_u,error_u_H1, ndof, conds = solve_linear_elastic_unfitted(h0, quad_mesh, order_u, levelset,fe, exact_u, mu,lam,beta_u,gamma_u,nitschType)
+    error_u,error_u_H1, ndof, conds = solve_linear_elastic_unfitted(h0, t0, quad_mesh, order_u, levelset,fe, exact_u, mu,lam,beta_u,gamma_u,nitschType)
     results.append((h0,ndof,conds,error_u,error_u_H1))
 
 print_convergence_table(results)

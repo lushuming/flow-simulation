@@ -16,9 +16,12 @@ def Stress(strain):
 def solve_linear_elastic_dg(h0, quad_mesh, orderu,fe, exact_u, mu,lam,beta_u,NitschType):
 
     # 1. Construct the mesh
-    square = SplineGeometry()
-    square.AddRectangle((-1, -1), (1, 1), bc=1)
-    ngmesh = square.GenerateMesh(maxh=h0, quad_dominated=quad_mesh)
+    # square = SplineGeometry()
+    # square.AddRectangle((-1, -1), (1, 1), bc=1)
+    # ngmesh = square.GenerateMesh(maxh=h0, quad_dominated=quad_mesh)
+    circle = SplineGeometry()
+    circle.AddCircle((0,0),1/2)
+    ngmesh = circle.GenerateMesh(maxh=h0, quad_dominated=quad_mesh)
     mesh = Mesh(ngmesh)
 
     # 2. Construct the  DG space 
@@ -40,36 +43,40 @@ def solve_linear_elastic_dg(h0, quad_mesh, orderu,fe, exact_u, mu,lam,beta_u,Nit
     # integration domains:
 
     # 4. Construc bilinear form and right hand side 
-
+    # main parts of Ah and lh
+    # stiffness matrix
     Ah = BilinearForm(U)
-    # Ae
-    # Ah += 2*mu*InnerProduct(strain_u,strain_v)*dx + lam*div(u)*div(v)*dx \
-    #         - (InnerProduct(mean_stress_u,jump_v) + InnerProduct(mean_stress_v,jump_u) - beta_u/h*InnerProduct(jump_u,jump_v))*dx(skeleton=True) \
-    #         - (InnerProduct(Stress(Sym(Grad(u)))*ne,v) + InnerProduct(Stress(Sym(Grad(v)))*ne,u) - beta_u/h*InnerProduct(u,v))*ds(skeleton=True)
     Ah += 2*mu*InnerProduct(strain_u,strain_v)*dx + lam*div(u)*div(v)*dx \
             - (InnerProduct(mean_stress_u,jump_v) + InnerProduct(mean_stress_v,jump_u))*dx(skeleton=True) \
             - (InnerProduct(Stress(Sym(Grad(u)))*ne,v) + InnerProduct(Stress(Sym(Grad(v)))*ne,u))*ds(skeleton=True)
-    # Nitsch term
-    if NitschType == 1:
-        Ah += beta_u/h*InnerProduct(jump_u,jump_v)*dx(skeleton=True) + beta_u/h*InnerProduct(u,v)*ds(skeleton=True)
-    elif NitschType == 2:
-        Ah += beta_u/h*InnerProduct(jump_u,jump_v)*dx(skeleton=True)  # interior jump
-        # Ah += beta_u/h*(2*mu*InnerProduct(jump_u,jump_v)+lam*(jump_u*ne)*(jump_v*ne))*dx(skeleton=True)  # interior jump
-        Ah += beta_u/h*(2*mu*InnerProduct(u,v) + lam*(u*ne)*(v*ne))*ds(skeleton=True) 
-
-
-    Ah.Assemble()
-
     # r.h.s
     lh = LinearForm(U) 
-    # lh += fe*v*dx - InnerProduct(uD,Stress(Sym(Grad(v)))*ne)*ds(skeleton=True) + beta_u/h*uD*v*ds(skeleton=True)
-    lh += fe*v*dx - InnerProduct(uD,Stress(Sym(Grad(v)))*ne)*ds(skeleton=True) 
+    lh += fe*v*dx - InnerProduct(uD,Stress(Sym(Grad(v)))*ne)*ds(skeleton=True)
+
+    ################################# Nitsche penalty terms #################################
     if NitschType == 1:
-        lh += beta_u/h*uD*v*ds(skeleton=True) 
+        Ah += beta_u/h*InnerProduct(jump_u,jump_v)*dx(skeleton=True)  # interior jump
+        Ah += beta_u/h*InnerProduct(u,v)*ds(skeleton=True)
+        lh += beta_u/h*InnerProduct(uD,v)*ds(skeleton=True)
     elif NitschType == 2:
-        lh += beta_u/h*(2*mu*InnerProduct(uD,v) + lam*(uD*ne)*(v*ne))*ds(skeleton=True) 
+        Ah += beta_u/h*(2*mu*InnerProduct(jump_u,jump_v)+lam*InnerProduct(jump_u,ne)*InnerProduct(jump_v,ne))*dx(skeleton=True)  # interior jump
+        Ah += beta_u/h*(2*mu*InnerProduct(u,v) + lam*InnerProduct(u,ne)*InnerProduct(v,ne))*ds(skeleton=True) 
+        lh += beta_u/h*(2*mu*InnerProduct(uD,v) + lam*InnerProduct(uD,ne)*InnerProduct(v,ne))*ds(skeleton=True)
+    elif NitschType == 3:
+        Ah += beta_u/h*InnerProduct(jump_u,jump_v)*dx(skeleton=True)  # interior jump
+        Ah += beta_u2*h*(div(u)-div(u.Other()))*(div(v)-div(v.Other()))*dx(skeleton=True)
+        Ah += beta_u/h*InnerProduct(u,v)*ds(skeleton=True) 
+        lh += beta_u/h*InnerProduct(uD,v)*ds(skeleton=True)
+    elif NitschType == 4:
+        Ah += beta_u/h*(2*mu*InnerProduct(jump_u,jump_v)+lam*InnerProduct(jump_u,ne)*InnerProduct(jump_v,ne))*dx(skeleton=True)  # interior jump
+        Ah += beta_u/h*(2*mu*InnerProduct(u,v) + lam*InnerProduct(u,ne)*InnerProduct(v,ne))*ds(skeleton=True) # boundary nitsche term
+        Ah += beta_u2/h*InnerProduct(Sym(Grad(u)),Sym(Grad(v)))*ds(skeleton=True)
+        lh += beta_u/h*(2*mu*InnerProduct(uD,v) + lam*InnerProduct(uD,n)*InnerProduct(v,ne))*ds(skeleton=True)
+        uB = GridFunction(U)
+        uB.Set(exact_u)
+        lh += beta_u2/h*InnerProduct(Sym(Grad(uB)),Sym(Grad(v)))*ds(skeleton=True)
 
-
+    Ah.Assemble()
     lh.Assemble()
 
     gfu = GridFunction(U)
@@ -89,11 +96,14 @@ def solve_linear_elastic_dg(h0, quad_mesh, orderu,fe, exact_u, mu,lam,beta_u,Nit
     gff.Set(exact_u)
     # grad_error_u = Grad(gfu - gff)
     # error_u_H1 = sqrt(Integrate(InnerProduct(grad_error_u,grad_error_u)*  dx, mesh))
-    err = gfu - gff
-    strain_error = 0.5 * (Grad(err) + Grad(err).trans)
-    energy_error_sq = 0
-    energy_error_sq += Integrate(InnerProduct(strain_error, strain_error)*dx,mesh)
-    error_u_H1 = sqrt(energy_error_sq)
+    # err = gfu - gff
+    # strain_error = 0.5 * (Grad(err) + Grad(err).trans)
+    # energy_error_sq = 0
+    # energy_error_sq += Integrate(InnerProduct(strain_error, strain_error)*dx,mesh)
+    # error_u_H1 = sqrt(energy_error_sq)
+    deltau = CF((exact_u[0].Diff(x),exact_u[0].Diff(y),exact_u[1].Diff(x),exact_u[1].Diff(y)),dims=(2, 2)).Compile()
+    grad_error_u = Grad(gfu)-deltau
+    error_u_H1 = sqrt(Integrate(InnerProduct(grad_error_u,grad_error_u)*dx, mesh))
 
     return error_u,error_u_H1,gfu.space.ndof, conds
 
@@ -113,21 +123,36 @@ def print_convergence_table(results):
 
 # Define important parameters
 # physical parameters for linear elastic
-mu  = 10
-lam = 100
+mu  = 1
+lam = 1e6
 
 # parameters of DG method
+# P1, (Nitsche type 3, 20, 1e-5*lam*lam)
+# P2, (Nitsche type 2, 60, 1e-5*lam*lam)
+# P2, (Nitsche type 1, 1000, 20),(Nitsche type 2, 400, 20)
 NitschType = 2
 order_u = 2
-beta_u = 1000
-
+beta_u = 2
+beta_u2 = 0
 quad_mesh = False
 
+########## divergence free example ##########
+# u_x = sin(pi*x) * cos(pi*y) 
+# u_y = -cos(pi*x) * sin(pi*y) 
+
+########## Example 1 ##########
+# u_x = sin(pi*x)*sin(pi*y)
+# u_y = x*y*(x-1)*(y-1)
+
+########## Example 2 ##########
+# u_x = -x*x*y*(2*y-1)*(x-1)*(x-1)*(y-1)
+# u_y = x*y*y*(2*x-1)*(x-1)*(y-1)*(y-1)
+
+########## Example 3 ##########
+u_x = sin(x)*sin(y) + x/lam
+u_y = cos(x)*cos(y) + y/lam
 
 # manufactured solution
-u_x = sin(pi*x)*sin(pi*y)
-u_y = x*y*(x-1)*(y-1)
-
 exact_u = CF((u_x, u_y))
 
 # strain tensor
