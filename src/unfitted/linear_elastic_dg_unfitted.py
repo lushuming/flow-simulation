@@ -18,17 +18,21 @@ def solve_linear_elastic_unfitted(h0, t0, quad_mesh, orderu, levelset,fe, exact_
 
     # 1. Construct the mesh
     square = SplineGeometry()
-    square.AddRectangle((-1, -1), (1, 1), bc=1)
+    # square.AddRectangle((-1, -1), (1, 1), bc=1)
+    square.AddRectangle((-1.5, -1.5), (1.5, 1.5), bc=1)
     ngmesh = square.GenerateMesh(maxh=h0, quad_dominated=quad_mesh)
     mesh = Mesh(ngmesh)
 
     # 2.  Higher order level set approximation
-    lsetmeshadap = LevelSetMeshAdaptation(mesh, order=orderu, threshold=0.1,
+    lsetmeshadap = LevelSetMeshAdaptation(mesh, order=1, threshold=0.2,
                                       discontinuous_qn=True)
     deformation = lsetmeshadap.CalcDeformation(levelset)
     lsetp1 = lsetmeshadap.lset_p1
+
+    # lsetp1 = GridFunction(H1(mesh,order=orderu))
     # InterpolateToP1(levelset,lsetp1)
 
+    
     # Element, facet and dof marking w.r.t. boundary approximation with lsetp1:
     ci = CutInfo(mesh, lsetp1)
     hasneg = ci.GetElementsOfType(HASNEG)
@@ -37,16 +41,18 @@ def solve_linear_elastic_unfitted(h0, t0, quad_mesh, orderu, levelset,fe, exact_
     ba_facets = GetFacetsWithNeighborTypes(mesh, a=hasneg, b=hasif)
     interior_facets = GetFacetsWithNeighborTypes(mesh, a=hasneg, b=hasneg)
 
+    
+
     ######### Add a threshhold to decide whether small cut occurs ####
-    kappaminus = CutRatioGF(ci)
-    kappaminus_values = kappaminus.vec.FV().NumPy()
-    positive_values = [v for v in kappaminus_values if v > 0]
-    min_value_pythonic = min(positive_values)
-    if min_value_pythonic > t0*h0*h0/2:
-        gamma_u = 0
-        print(f"There are no small cuts.")
-    else:
-        print("There are small cuts.")
+    # kappaminus = CutRatioGF(ci)
+    # kappaminus_values = kappaminus.vec.FV().NumPy()
+    # positive_values = [v for v in kappaminus_values if v > 0]
+    # min_value_pythonic = min(positive_values)
+    # if min_value_pythonic > t0*h0*h0/2:
+    #     gamma_u = 0
+    #     print(f"There are no small cuts.")
+    # else:
+    #     print("There are small cuts.")
 
     # 3. Construct the unfitted DG space 
     Uhbase = VectorL2(mesh, order=order_u, dirichlet=[], dgjumps=True) # space for displacement
@@ -127,8 +133,8 @@ def solve_linear_elastic_unfitted(h0, t0, quad_mesh, orderu, levelset,fe, exact_
 
     
     # Calculate the condition number of the stiffness matrix
-    rows,cols,vals = Ah.mat.COO()
-    A = sp.csr_matrix((vals,(rows,cols)))
+    # rows,cols,vals = Ah.mat.COO()
+    # A = sp.csr_matrix((vals,(rows,cols)))
     # conds = np.linalg.cond(A.todense())
     conds = 0
         
@@ -173,18 +179,18 @@ def solve_linear_elastic_unfitted(h0, t0, quad_mesh, orderu, levelset,fe, exact_
     error_u_H1 = sqrt(Integrate(InnerProduct(grad_error_u,grad_error_u)*domega, mesh))
 
     # 计算系数矩阵的条件数
-    rows,cols,vals = Ah.mat.COO()
-    A_scipy = sp.csr_matrix((vals,(rows,cols)))
+    # rows,cols,vals = Ah.mat.COO()
+    # A_scipy = sp.csr_matrix((vals,(rows,cols)))
     # conds = np.linalg.cond(A_scipy.todense())
     # print(conds)
     # 变量名 'K' (Stiffness Matrix) 将在 MATLAB 中使用
-    data_to_save = {'K': A_scipy} 
+    # data_to_save = {'K': A_scipy} 
 
     # 5. 保存为 .mat 文件
-    output_filename = '/mnt/d/ngsolve_matrix/linearelasticity_' + str(h0) + '_' + str(gamma_u) + '.mat'
-    savemat(output_filename, data_to_save)
+    # output_filename = '/mnt/d/ngsolve_matrix/linearelasticity_' + str(h0) + '_' + str(gamma_u) + '.mat'
+    # savemat(output_filename, data_to_save)
 
-    print(f"矩阵已成功保存到文件: {output_filename}")
+    # print(f"矩阵已成功保存到文件: {output_filename}")
 
 
 
@@ -208,8 +214,8 @@ def print_convergence_table(results):
 
 # Define important parameters
 # physical parameters for linear elastic
-mu  = 1
-lam = 1e6
+mu  = 10
+lam = 100
 
 # parameters of DG method
 # P1, (Nitsche type 3, 10, 1e-5*lam*lam, 10),(Nitsche type 2, 10, 0, 0.1)
@@ -217,7 +223,7 @@ lam = 1e6
 # P2, (Nitsche type 1, 1000, 20),(Nitsche type 2, 400, 20)
 nitschType = 2
 order_u = 2
-beta_u = 10
+beta_u = 100
 beta_u2 = 0
 
 # parameter of ghost penalty
@@ -232,16 +238,16 @@ quad_mesh = False
 # u_y = -cos(pi*x) * sin(pi*y) 
 
 ########## Example 1 ##########
-# u_x = sin(pi*x)*sin(pi*y)
-# u_y = x*y*(x-1)*(y-1)
+u_x = sin(pi*x)*sin(pi*y)
+u_y = x*y*(x-1)*(y-1)
 
 ########## Example 2 ##########
 # u_x = -x*x*y*(2*y-1)*(x-1)*(x-1)*(y-1)
 # u_y = x*y*y*(2*x-1)*(x-1)*(y-1)*(y-1)
 
 ########## Example 3 ##########
-u_x = sin(pi*x)*sin(pi*y) + x/lam
-u_y = cos(pi*x)*cos(pi*y) + y/lam
+# u_x = sin(pi*x)*sin(pi*y) + x/lam
+# u_y = cos(pi*x)*cos(pi*y) + y/lam
 
 
 # manufactured solution
@@ -269,8 +275,10 @@ fe = CF((f_x, f_y))
 uD = exact_u
 
 # Set level set function
-levelset = sqrt(x**2 + y**2) - 1/2
+# levelset = sqrt(x**2 + y**2) - 1/2
 # levelset = x - 1/3
+#### 心型线 ####
+levelset = (x**2+y**2-1)**3 - x**2*y**3
 
 results = []
 
