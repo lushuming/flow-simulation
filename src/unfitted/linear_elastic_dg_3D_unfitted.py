@@ -72,10 +72,10 @@ def solve_linear_elastic_unfitted(h0, quad_mesh, orderu, levelset,fe, exact_u, m
             - (InnerProduct(Stress(Sym(Grad(u)))*n,v) + InnerProduct(Stress(Sym(Grad(v)))*n,u) - beta_u/h*InnerProduct(u,v))*ds
     # order=1 i_s 
     # Ah += gamma_u * InnerProduct(Grad(u) - Grad(u.Other()),Grad(v) - Grad(v.Other())) * dw
-    Ah += gamma_u * h * ((Grad(u) - Grad(u.Other()))*ne) * ((Grad(v) - Grad(v.Other()))*ne) * dw
+    # Ah += gamma_u * h * ((Grad(u) - Grad(u.Other()))*ne) * ((Grad(v) - Grad(v.Other()))*ne) * dw
     # Ah += gamma_u * h * InnerProduct(Grad(u) - Grad(u.Other()),Grad(v) - Grad(v.Other())) * dw
     # Ah += gamma_u * h * (jump_du*ne) * (jump_dv * ne) * dw
-    # Ah += gamma_u / h**2 * (u - u.Other()) * (v - v.Other()) * dw
+    Ah += gamma_u / h**2 * (u - u.Other()) * (v - v.Other()) * dw
 
     Ah.Assemble()
 
@@ -115,14 +115,14 @@ def print_convergence_table(results):
 # Define important parameters
 # physical parameters for linear elastic
 mu  = 10
-lam = 10
+lam = 100
 
 # parameters of DG method
-order_u = 1
-beta_u = 500 * order_u * order_u
+order_u = 2
+beta_u = 100
 
 # parameter of ghost penalty
-gamma_u = 50
+gamma_u = 0
 
 quad_mesh = False
 
@@ -165,7 +165,7 @@ levelset = sqrt(x**2 + y**2 + z**2) - 1/3
 
 results = []
 hsize = [4,8,10,16]
-for k in range(4):
+for k in range(3):
     h0 = 1/hsize[k]
     error_u, ndof, conds = solve_linear_elastic_unfitted(h0, quad_mesh, order_u, levelset,fe, exact_u, mu,lam,beta_u,gamma_u)
     results.append((h0,ndof,conds,error_u))

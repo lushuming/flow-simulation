@@ -230,7 +230,7 @@ def print_convergence_table(results):
 # Define important parameters
 mu  = 10
 lam = 100
-alpha = 0
+alpha = 1
 # alpha = 0
 K = 10 # k^-1
 nu = 1
