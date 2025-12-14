@@ -15,7 +15,8 @@ def solve_biotBrinkman_steady_dg(h0, order_eta, order_u,order_p, fe, fm,fp, exac
     # 1. Construct the mesh
     # mesh = Mesh(unit_square.GenerateMesh(maxh=h))
     square = SplineGeometry()
-    square.AddRectangle((0, 0), (1, 1),bc=1)
+    # square.AddRectangle((0, 0), (1, 1),bc=1)
+    
     ngmesh = square.GenerateMesh(maxh=h0, quad_dominated=False)
     mesh = Mesh(ngmesh)
 

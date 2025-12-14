@@ -20,7 +20,7 @@ def solve_linear_elastic_dg_mlsets(h0, quad_mesh, orderu, level_sets,fe, exact_u
 
     # 1. Construct the mesh
     geo = SplineGeometry()
-    geo.AddRectangle((-1, -0.5), (1, 0.5), bc="outer")
+    geo.AddRectangle((0,0), (1, 1), bcs=("outer","outer","outer","left"))
     ngmesh = geo.GenerateMesh(maxh=h0, quad_dominated=quad_mesh)
     mesh = Mesh(ngmesh)
 
@@ -31,7 +31,7 @@ def solve_linear_elastic_dg_mlsets(h0, quad_mesh, orderu, level_sets,fe, exact_u
     for i, lset_p1 in enumerate(level_sets_p1):
         InterpolateToP1(level_sets[i],lset_p1)
 
-    omega = DomainTypeArray((NEG,NEG))
+    omega = DomainTypeArray((NEG,NEG,POS)) | DomainTypeArray((NEG,POS,POS)) | DomainTypeArray((POS,NEG,POS))
     boundary = omega.Boundary()
 
     mlci = MultiLevelsetCutInfo(mesh,level_sets_p1)
@@ -46,6 +46,7 @@ def solve_linear_elastic_dg_mlsets(h0, quad_mesh, orderu, level_sets,fe, exact_u
         
     # 3. Construct the unfitted DG space 
     Uhbase = VectorL2(mesh, order=orderu, dirichlet=[], dgjumps=True) # space for displacement
+    # Uhbase = VectorH1(mesh, order=orderu, dirichlet=[], dgjumps=True) # space for displacement
     U = Compress(Uhbase, GetDofsOfElements(Uhbase, els_hasneg))
     # freedofs = GetDofsOfElements(U,els_hasneg) & U.FreeDofs()
     u,v = U.TnT()
@@ -70,11 +71,13 @@ def solve_linear_elastic_dg_mlsets(h0, quad_mesh, orderu, level_sets,fe, exact_u
     jump_du = Grad(u)*ne - Grad(u.Other())*ne
     jump_dv = Grad(v)*ne - Grad(v.Other())*ne
 
+    mask = omega.Indicator(level_sets_p1)
+
     # 4. Construc bilinear form and right hand side 
     # stiffness matrix
     Ah = BilinearForm(U)
     Ah += 2*mu*InnerProduct(strain_u,strain_v)*domega + lam*div(u)*div(v)*domega
-    Ah += - (InnerProduct(mean_stress_u,jump_v) + InnerProduct(mean_stress_v,jump_u))*dk 
+    Ah += - mask*(InnerProduct(mean_stress_u,jump_v) + InnerProduct(mean_stress_v,jump_u))*dk 
     # boundary terms
     Ah += - (InnerProduct(Stress(Sym(Grad(u)))*ne,v) + InnerProduct(Stress(Sym(Grad(v)))*ne,u))*dsbar # outer boundary
     # levelset boundaries
@@ -101,7 +104,7 @@ def solve_linear_elastic_dg_mlsets(h0, quad_mesh, orderu, level_sets,fe, exact_u
             Ah += beta_u / h * InnerProduct(u, v) * dsc[bnd] # nitsche term
             lh += beta_u/h*InnerProduct(uD,v)*dsc[bnd] 
     elif NitschType == 2:
-        Ah += beta_u/h*(2*mu*InnerProduct(jump_u,jump_v)+lam*InnerProduct(jump_u,ne)*InnerProduct(jump_v,ne))*dk  # interior jump
+        Ah += mask*beta_u/h*(2*mu*InnerProduct(jump_u,jump_v)+lam*InnerProduct(jump_u,ne)*InnerProduct(jump_v,ne))*dk  # interior jump
         Ah += beta_u/h*(2*mu*InnerProduct(u,v) + lam*InnerProduct(u,ne)*InnerProduct(v,ne))*dsbar  
         lh += beta_u/h*(2*mu*InnerProduct(uD,v) + lam*InnerProduct(uD,ne)*InnerProduct(v,ne))*dsbar
         for bnd, n in normals.items():
@@ -170,7 +173,7 @@ lam = 100
 # parameters of DG method
 #(1,200,10)
 order_u = 2
-beta_u = 200
+beta_u = 1000
 
 # parameter of ghost penalty
 gamma_u = 0
@@ -206,14 +209,15 @@ fe = CF((f_x, f_y))
 uD = exact_u
 
 # Set level set function
-circle1 = 1/9-(x-0.5)**2-y**2
-circle2 = 1/9-(x+0.5)**2-y**2
-level_sets = (circle1, circle2)
+line1 = -0.6*x+0.6-y
+line2 = 0.2*x-0.4 + y 
+line3 = x
+level_sets = (line1, line2, line3)
 
 
 results = []
 NitschType = 2
-for k in range(2, 6):
+for k in range(2, 7):
     h0 = 1/2**k
     error_u,error_u_H1, ndof, conds = solve_linear_elastic_dg_mlsets(h0, quad_mesh, order_u, level_sets,fe, exact_u, mu,lam,beta_u,gamma_u,NitschType)
     results.append((h0,ndof,conds,error_u,error_u_H1))
