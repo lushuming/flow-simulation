@@ -14,22 +14,19 @@ def Stress(strain):
     return 2*mu*strain + lam*Trace(strain)*Id(2)
 
 def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p, fe, fm,fp, exact_eta, exact_u, \
-                               exact_p,alpha,K,mu,lam,beta_eta,beta_u,gamma_s,gamma_u,gamma_p,gamma_m,tau_p):
+                               exact_p,alpha,K,mu,lam,beta_eta,beta_u,gamma_s,gamma_u,gamma_p):
 
     # 1. Construct the mesh
     square = SplineGeometry()
-    # square.AddRectangle((-1.5, -1.5), (1.5, 1.5), bc=1)
-    # square.AddRectangle((-1, -1), (1, 1), bc=1)
     square.AddRectangle((0, 0), (1, 1), bc=1)
     ngmesh = square.GenerateMesh(maxh=h0, quad_dominated=quad_mesh)
     mesh = Mesh(ngmesh)
 
     # 2.  Higher order level set approximation
-    lsetmeshadap = LevelSetMeshAdaptation(mesh, order=1, threshold=0.1,
+    lsetmeshadap = LevelSetMeshAdaptation(mesh, order=1, threshold=10,
                                       discontinuous_qn=True)
     deformation = lsetmeshadap.CalcDeformation(levelset)
     lsetp1 = lsetmeshadap.lset_p1
-    # InterpolateToP1(levelset,lsetp1)
 
     # Element, facet and dof marking w.r.t. boundary approximation with lsetp1:
     ci = CutInfo(mesh, lsetp1)
@@ -38,9 +35,7 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     
     # facets used for stabilization:
     ba_facets = GetFacetsWithNeighborTypes(mesh, a=hasneg, b=hasif)
-    ba_surround_facets = GetElementsWithNeighborFacets(mesh,ba_facets)
     interior_facets = GetFacetsWithNeighborTypes(mesh, a=hasneg, b=hasneg)
-    in_surround_facets = GetElementsWithNeighborFacets(mesh,interior_facets)
 
     # 3. Construct the unfitted DG space 
     Ehbase = VectorL2(mesh, order=order_eta, dirichlet=[], dgjumps=True) # space for displacement
@@ -55,7 +50,6 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
 
     # Define special variables
     n = 1.0 / Norm(grad(lsetp1)) * grad(lsetp1)
-    # n = specialcf.normal(2)
     ne = specialcf.normal(2) # normal vectors on faces
     h = specialcf.mesh_size  
     
@@ -89,9 +83,6 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
 
     Ah = BilinearForm(fes)
     # Ae
-    # Ah += 2*mu*InnerProduct(strain_eta,strain_kxi)*domega + lam*div(eta)*div(kxi)*domega \
-    #         - (InnerProduct(mean_stress_eta,jump_kxi) + InnerProduct(mean_stress_kxi,jump_eta) - beta_eta/h*InnerProduct(jump_eta,jump_kxi))*dk \
-    #         - (InnerProduct(Stress(Sym(Grad(eta)))*n,kxi) + InnerProduct(Stress(Sym(Grad(kxi)))*n,eta) - beta_eta/h*InnerProduct(eta,kxi))*ds
     Ah += 2*mu*InnerProduct(strain_eta,strain_kxi)*domega + lam*div(eta)*div(kxi)*domega \
             - (InnerProduct(mean_stress_eta,jump_kxi) + InnerProduct(mean_stress_kxi,jump_eta))*dk \
             - (InnerProduct(Stress(Sym(Grad(eta)))*n,kxi) + InnerProduct(Stress(Sym(Grad(kxi)))*n,eta))*ds
@@ -101,9 +92,6 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
 
 
     # order=1 i_s 
-    # Ah += gamma_s * h * InnerProduct(Grad(eta)*ne - Grad(eta.Other())*ne,Grad(kxi)*ne - Grad(kxi.Other())*ne) * dw
-    # Ah += gamma_s * h * InnerProduct(Grad(eta) - Grad(eta.Other()),Grad(kxi) - Grad(kxi.Other())) * dw
-    # Ah += gamma_s * InnerProduct(Grad(eta) - Grad(eta.Other()),Grad(kxi) - Grad(kxi.Other())) * dw
     Ah += gamma_s / (h**2) * (eta - eta.Other()) * (kxi - kxi.Other()) * dw
 
     # Be
@@ -116,8 +104,6 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
             - nu*(InnerProduct(Grad(u)*n,v) + InnerProduct(Grad(v)*n,u) - beta_u/h*InnerProduct(u,v))*ds\
             + K*InnerProduct(u,v)*domega
     # ghost penalty for velocity
-    # Ah += gamma_u * h * InnerProduct(Grad(u)*ne - Grad(u.Other())*ne,Grad(v)*ne - Grad(v.Other())*ne) * dw
-    # Ah += gamma_u * InnerProduct(Grad(u) - Grad(u.Other()),Grad(v) - Grad(v.Other())) * dw
     Ah += gamma_u / (h**2) * (u - u.Other()) * (v - v.Other()) * dw
     
     
@@ -128,25 +114,22 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     Ah += div(u)*q*domega - mean_q*jump_u*ne*dk - q*u*n*ds
     
     # order=1 i_p 
-    # Ah += gamma_p * h * (grad(p)*ne - grad(p.Other())*ne)*(grad(q)*ne - grad(q.Other())*ne) * dw
     # Ah += gamma_p / (h**2) * jump_p * jump_q * dw
-    Ah += gamma_p * (h**3) * (grad(p)*ne - grad(p.Other())*ne)*(grad(q)*ne - grad(q.Other())*ne) * dk
+    Ah += gamma_p * jump_p * jump_q * dw
+    # Ah += gamma_p * (h**3) * (grad(p)*ne - grad(p.Other())*ne)*(grad(q)*ne - grad(q.Other())*ne) * dk
 
     
     # M
-    Ah += s0*p*q*domega + gamma_m*(h**3)*(grad(p)*ne - grad(p.Other())*ne)*(grad(q)*ne - grad(q.Other())*ne) * dw
+    Ah += s0*p*q*domega 
     
     # -Be
     Ah += alpha*(div(eta)*q*domega - mean_q*jump_eta*ne*dk - q*eta*n*ds)
     
-    # stabilization
-    Ah += tau_p*h*grad(jump_p)*grad(jump_q)*dk
     Ah.Assemble()
 
 
     # r.h.s
     lh = LinearForm(fes) 
-    # lh += fe*kxi*domega - InnerProduct(etaD,Stress(Sym(Grad(kxi)))*n)*ds + beta_eta/h*etaD*kxi*ds
     lh += fe*kxi*domega - InnerProduct(etaD,Stress(Sym(Grad(kxi)))*n)*ds
     lh += beta_eta/h*(2*mu*InnerProduct(etaD,kxi) + lam*InnerProduct(etaD,n)*InnerProduct(kxi,n))*ds
     lh += fm*v*domega - nu*InnerProduct(uD,Grad(v)*n)*ds + nu*beta_u/h*uD*v*ds
@@ -173,15 +156,14 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     # 计算系数矩阵的条件数
     rows,cols,vals = Ah.mat.COO()
     A_scipy = sp.csr_matrix((vals,(rows,cols)))
-    # conds = np.linalg.cond(A_scipy.todense())
-    # print(conds)
-    # 变量名 'K' (Stiffness Matrix) 将在 MATLAB 中使用
-    data_to_save = {'K': A_scipy} 
+    # 变量名 'A' 将在 MATLAB 中使用
+    data_to_save = {'A': A_scipy} 
 
-    # 5. 保存为 .mat 文件
-    # output_filename = '/mnt/d/ngsolve_matrix/ngsolve_stiffness_matrix' + str(h0) + '.mat'
-    # savemat(output_filename, data_to_save)
-    # print(f"矩阵已成功保存到文件: {output_filename}")
+    # # 5. 保存为 .mat 文件
+    output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp2p2p1_' + str(h0) + '.mat'
+    # output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp3p3p2_' + str(h0) + '.mat'
+    savemat(output_filename, data_to_save)
+    print(f"矩阵已成功保存到文件: {output_filename}")
 
     kappaminus = CutRatioGF(ci)
     kappaminus_values = kappaminus.vec.FV().NumPy()
@@ -193,19 +175,6 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
         print("There are no cut elements.")
 
     return error_eta, error_u,error_p, gfu.space.ndof, error_eta_H1,error_u_H1
-
-# def print_convergence_table(results):
-#     print(f"{'h':>8} | {'DoFs':>8} |  {'Error_eta.':>12} | {'Order':>6} | {'Error_u.':>12}  | {'Order':>6} | {'Error_p':>12} | {'Order':>6}")
-#     print("-" * 70)
-#     for i, (h,dofs,error_eta,error_u,error_p) in enumerate(results):
-#         if i == 0:
-#             print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {'-':>6} |{error_u:12.4e}| {'-':>6}| {error_p:12.4e} | {'-':>6}")
-#         else:
-#             prev_h,_,prev_error_eta, prev_error_u,prev_error_p = results[i-1]
-#             rate_eta = (np.log(prev_error_eta) - np.log(error_eta)) / (np.log(prev_h) - np.log(h))
-#             rate_u = (np.log(prev_error_u) - np.log(error_u)) / (np.log(prev_h) - np.log(h))
-#             rate_p = (np.log(prev_error_p) - np.log(error_p)) / (np.log(prev_h) - np.log(h))
-#             print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {rate_eta:6.2f} |{error_u:12.4e}| {rate_u:6.2f} | {error_p:12.4e} | {rate_p:6.2f}")
 
 def print_convergence_table(results):
     print(f"{'h':>8} | {'DoFs':>8} |  {'Error_eta_L2.':>12} | {'Order':>6} |  {'Error_eta_H1.':>12} | {'Order':>6}  | {'Error_u_L2.':>12}  | {'Order':>6} |{'Error_u_H1.':>12}  | {'Order':>6}| {'Error_p':>12} | {'Order':>6}")
@@ -221,11 +190,6 @@ def print_convergence_table(results):
             rate_u_H1 = (np.log(prev_error_u_H1) - np.log(error_u_H1)) / (np.log(prev_h) - np.log(h))
             rate_p = (np.log(prev_error_p) - np.log(error_p)) / (np.log(prev_h) - np.log(h))
             print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {rate_eta_L2:6.2f} |{error_eta_H1:12.4e} | {rate_eta_H1:6.2f}|{error_u:12.4e}| {rate_u_L2:6.2f} | {error_u_H1:12.4e}| {rate_u_H1:6.2f} | {error_p:12.4e} | {rate_p:6.2f}")
-
-# 10, 100, 1, 10, 1, 0.01, P1 x P1 x P0, 200, 100, 
-# 10, 100, 1, 10, 1, 0.01, P2 x P2 x P1, 200, 100, 20, 10, 0.1, 0, 0
-# 10, 100, 1, 10, 1, 0.01, P2 x P2 x P1, 400, 200, 0, 0, 0, 0, 0 # 可以差不多达到收敛阶
-# 10, 100, 1, 10, 1, 0.01, P3 x P3 x P2, 400, 400, 10, 5, 0.1, 0, 0 
 
 # Define important parameters
 mu  = 10
@@ -245,23 +209,22 @@ order_u = 2
 order_p = 1
 
 # penalty parameters
-# p2-p2-p1 (200,200,10,10,0.1,0,0)
-beta_eta = 100
-beta_u = 100
+# p2-p2-p1 (50, 50, 1, 0.5, 0.05)
+# p3-p3-p2 (100, 100, 0.1, 0.001, 0.001)
+beta_eta = 50
+beta_u = 50
 # ghost penalty parameters
-gamma_s = 0.1
-gamma_u = 0.1
-gamma_p = 0.1
-gamma_m = 0
-tau_p = 0
+gamma_s = 1
+gamma_u = 0.5
+gamma_p = 0.05
 
 # Manufactured exact solution for monitoring the error
 #---------------------Example 1 -----------------------
-# u_x = sin(pi*x) * cos(pi*y)
-# u_y = -cos(pi*x) * sin(pi*y)
-# eta_x = sin(pi*x)*sin(pi*y)
-# eta_y = x*y*(x-1)*(y-1)
-# exact_p = sin(pi*(x-y))
+eta_x = sin(pi*x)*sin(pi*y)
+eta_y = x*y*(x-1)*(y-1)
+u_x = sin(pi*x) * cos(pi*y)
+u_y = -cos(pi*x) * sin(pi*y)
+exact_p = sin(pi*(x-y))
 
 #---------------------Example 2 -----------------------
 # eta_x = sin(pi*x)*sin(pi*y) + x/lam
@@ -273,11 +236,11 @@ tau_p = 0
 # exact_p = (pi*sin(pi*x)-2)*cos(2*pi*y)
 
 #---------------------Example 3 -----------------------
-u_x = sin(pi*x) * cos(pi*y)
-u_y = -cos(pi*x) * sin(pi*y)
-eta_x = sin(pi*x)*sin(pi*y) 
-eta_y = cos(pi*x)*cos(pi*y) 
-exact_p = sin(pi*(x-y))
+# u_x = sin(pi*x) * cos(pi*y)
+# u_y = -cos(pi*x) * sin(pi*y)
+# eta_x = sin(pi*x)*sin(pi*y) 
+# eta_y = cos(pi*x)*cos(pi*y) 
+# exact_p = sin(pi*(x-y))
 
 
 
@@ -313,18 +276,16 @@ pD = exact_p
 
 # Set level set function
 # levelset = sqrt(x**2 + y**2) - 1/2
-# levelset = (x-1/2)**2 + (y-1/2)**2 - 1/9
+levelset = (x-1/2)**2 + (y-1/2)**2 - 1/16
 #### 心型线 ####
-levelset = (x**2+y**2-1)**3 - x**2*y**3
+# levelset = (x**2+y**2-1)**3 - x**2*y**3
 
 results = []
 
 for k in range(2, 6):
     h0 = 1/2**k
     error_eta, error_u,error_p, ndof, error_eta_H1,error_u_H1 = solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p, fe, fm,fp, exact_eta, exact_u, \
-                                                              exact_p,alpha,K,mu,lam,beta_eta,beta_u,gamma_s,gamma_u,gamma_p,gamma_m,tau_p)
-    # error_eta, error_u,error_p,ndof = solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p, fe, fm,fp, exact_eta, exact_u, \
-    #                                                           exact_p,alpha,K,mu,lam,beta_eta,beta_u,gamma_s,gamma_u,gamma_p,gamma_m,tau_p)
+                                                              exact_p,alpha,K,mu,lam,beta_eta,beta_u,gamma_s,gamma_u,gamma_p)
     results.append((h0,ndof,error_eta,error_eta_H1,error_u,error_u_H1,error_p))
 
 print_convergence_table(results)
