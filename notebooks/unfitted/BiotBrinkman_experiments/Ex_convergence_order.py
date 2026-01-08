@@ -156,11 +156,12 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     # 计算系数矩阵的条件数
     rows,cols,vals = Ah.mat.COO()
     A_scipy = sp.csr_matrix((vals,(rows,cols)))
-    # 变量名 'A' 将在 MATLAB 中使用
     data_to_save = {'A': A_scipy} 
 
     # # 5. 保存为 .mat 文件
-    output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp2p2p1_' + str(h0) + '.mat'
+    # output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp2p2p1_' + str(h0) + '_withoutpenalty.mat'
+    # output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp2p2p1_' + str(h0) + '.mat'
+    output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp3p3p2_' + str(h0) + '_withoutpenalty.mat'
     # output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp3p3p2_' + str(h0) + '.mat'
     savemat(output_filename, data_to_save)
     print(f"矩阵已成功保存到文件: {output_filename}")
@@ -173,6 +174,10 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
         print(f"The smallest cut ratio is: {min_value_pythonic:.2e}")
     else:
         print("There are no cut elements.")
+
+
+    # vtk = VTKOutput(mesh,[gfu.components[0],gfu.components[1],gfu.components[2]],['eta','u','p'],"/mnt/d/ngs_output/Biot_Brinkman/Ex_convergence",subdivision=0)
+    # vtk.Do()   #输出网格
 
     return error_eta, error_u,error_p, gfu.space.ndof, error_eta_H1,error_u_H1
 
@@ -204,19 +209,20 @@ s0 = 1e-2
 quad_mesh = False
 
 # DG space order
-order_eta = 2
-order_u = 2
-order_p = 1
+order_eta = 3
+order_u = 3
+order_p = 2
 
 # penalty parameters
 # p2-p2-p1 (50, 50, 1, 0.5, 0.05)
 # p3-p3-p2 (100, 100, 0.1, 0.001, 0.001)
-beta_eta = 50
-beta_u = 50
+# or p3-p3-p2 (100, 100, 0.1, 0.05, 0.001)
+beta_eta = 100
+beta_u = 100
 # ghost penalty parameters
-gamma_s = 1
-gamma_u = 0.5
-gamma_p = 0.05
+gamma_s = 0
+gamma_u = 0
+gamma_p = 0
 
 # Manufactured exact solution for monitoring the error
 #---------------------Example 1 -----------------------
@@ -282,7 +288,7 @@ levelset = (x-1/2)**2 + (y-1/2)**2 - 1/16
 
 results = []
 
-for k in range(2, 6):
+for k in range(2, 8):
     h0 = 1/2**k
     error_eta, error_u,error_p, ndof, error_eta_H1,error_u_H1 = solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p, fe, fm,fp, exact_eta, exact_u, \
                                                               exact_p,alpha,K,mu,lam,beta_eta,beta_u,gamma_s,gamma_u,gamma_p)
