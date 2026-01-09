@@ -8,6 +8,7 @@ from numpy import linspace
 import numpy as np
 import scipy.sparse as sp
 from scipy.io import savemat
+from scipy.sparse.linalg import svds
 
 
 def Stress(strain):
@@ -156,22 +157,24 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     # 计算系数矩阵的条件数
     rows,cols,vals = Ah.mat.COO()
     A_scipy = sp.csr_matrix((vals,(rows,cols)))
-    data_to_save = {'A': A_scipy} 
+    condA = np.linalg.cond(A_scipy.todense())
+    
+    # data_to_save = {'A': A_scipy} 
 
     # # 5. 保存为 .mat 文件
     # output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp2p2p1_' + str(h0) + '_withoutpenalty.mat'
     # output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp2p2p1_' + str(h0) + '.mat'
-    output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp3p3p2_' + str(h0) + '_withoutpenalty.mat'
+    # output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp3p3p2_' + str(h0) + '_withoutpenalty.mat'
     # output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp3p3p2_' + str(h0) + '.mat'
-    savemat(output_filename, data_to_save)
-    print(f"矩阵已成功保存到文件: {output_filename}")
+    # savemat(output_filename, data_to_save)
+    # print(f"矩阵已成功保存到文件: {output_filename}")
 
     kappaminus = CutRatioGF(ci)
     kappaminus_values = kappaminus.vec.FV().NumPy()
     positive_values = [v for v in kappaminus_values if v > 0]
     if positive_values:
-        min_value_pythonic = min(positive_values)
-        print(f"The smallest cut ratio is: {min_value_pythonic:.2e}")
+        min_fraction = min(positive_values)
+        print(f"The smallest cut ratio is: {min_fraction:.2e}")
     else:
         print("There are no cut elements.")
 
@@ -179,22 +182,9 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     # vtk = VTKOutput(mesh,[gfu.components[0],gfu.components[1],gfu.components[2]],['eta','u','p'],"/mnt/d/ngs_output/Biot_Brinkman/Ex_convergence",subdivision=0)
     # vtk.Do()   #输出网格
 
-    return error_eta, error_u,error_p, gfu.space.ndof, error_eta_H1,error_u_H1
+    return error_eta, error_u,error_p, gfu.space.ndof, error_eta_H1,error_u_H1,condA,min_fraction
 
-def print_convergence_table(results):
-    print(f"{'h':>8} | {'DoFs':>8} |  {'Error_eta_L2.':>12} | {'Order':>6} |  {'Error_eta_H1.':>12} | {'Order':>6}  | {'Error_u_L2.':>12}  | {'Order':>6} |{'Error_u_H1.':>12}  | {'Order':>6}| {'Error_p':>12} | {'Order':>6}")
-    print("-" * 70)
-    for i, (h,dofs,error_eta,error_eta_H1,error_u,error_u_H1,error_p) in enumerate(results):
-        if i == 0:
-            print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} |  {'-':>6} | {error_eta_H1:12.4e} |  {'-':>6} | {error_u:12.4e}| {'-':>6}| {error_u_H1:12.4e}| {'-':>6}  | {error_p:12.4e} | {'-':>6}")
-        else:
-            prev_h,_,prev_error_eta,prev_error_eta_H1, prev_error_u,prev_error_u_H1,prev_error_p = results[i-1]
-            rate_eta_L2 = (np.log(prev_error_eta) - np.log(error_eta)) / (np.log(prev_h) - np.log(h))
-            rate_eta_H1 = (np.log(prev_error_eta_H1) - np.log(error_eta_H1)) / (np.log(prev_h) - np.log(h))
-            rate_u_L2 = (np.log(prev_error_u) - np.log(error_u)) / (np.log(prev_h) - np.log(h))
-            rate_u_H1 = (np.log(prev_error_u_H1) - np.log(error_u_H1)) / (np.log(prev_h) - np.log(h))
-            rate_p = (np.log(prev_error_p) - np.log(error_p)) / (np.log(prev_h) - np.log(h))
-            print(f"{h:8.4f} | {dofs:8d} | {error_eta:12.4e} | {rate_eta_L2:6.2f} |{error_eta_H1:12.4e} | {rate_eta_H1:6.2f}|{error_u:12.4e}| {rate_u_L2:6.2f} | {error_u_H1:12.4e}| {rate_u_H1:6.2f} | {error_p:12.4e} | {rate_p:6.2f}")
+
 
 # Define important parameters
 mu  = 10
@@ -217,12 +207,12 @@ order_p = 1
 # p2-p2-p1 (50, 50, 1, 0.5, 0.05)
 # p3-p3-p2 (100, 100, 0.1, 0.001, 0.001)
 # or p3-p3-p2 (100, 100, 0.1, 0.05, 0.001)
-beta_eta = 100
-beta_u = 100
+beta_eta = 50
+beta_u = 50
 # ghost penalty parameters
-gamma_s = 0.1
-gamma_u = 0.05
-gamma_p = 0.001
+gamma_s = 0
+gamma_u = 0
+gamma_p = 0
 
 # Manufactured exact solution for monitoring the error
 #---------------------Example 1 -----------------------
@@ -281,25 +271,19 @@ uD = exact_u
 pD = exact_p
 
 # Set level set function
-# Ex1 & 2 
-# levelset = (x-1/2)**2 + (y-1/2)**2 - 1/16
-# Ex2 椭圆
-theta = 0
-Xp = (x - 0.5)*np.cos(theta) + (y - 0.5)*np.sin(theta)
-Yp = -(x - 0.5)*np.sin(theta) + (y - 0.5)*np.cos(theta)
-levelset = (Xp**2)*9 + (Yp**2)*25 - 1
+# levelset = sqrt(x**2 + y**2) - 1/2
 
 #### 心型线 ####
 # levelset = (x**2+y**2-1)**3 - x**2*y**3
 
-
-
 results = []
-
-for k in range(2, 6):
-    h0 = 1/2**k
-    error_eta, error_u,error_p, ndof, error_eta_H1,error_u_H1 = solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p, fe, fm,fp, exact_eta, exact_u, \
+delta = 0.02
+for k in range(0, 26):
+    levelset = (x-1/4-delta*k)**2 + (y-1/4-delta*k)**2 - 1/16
+    h0 = 1/16
+    error_eta, error_u,error_p, ndof, error_eta_H1,error_u_H1,condA,min_fraction = solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p, fe, fm,fp, exact_eta, exact_u, \
                                                               exact_p,alpha,K,mu,lam,beta_eta,beta_u,gamma_s,gamma_u,gamma_p)
-    results.append((h0,ndof,error_eta,error_eta_H1,error_u,error_u_H1,error_p))
+    results.append((ndof,min_fraction,condA,error_eta,error_eta_H1,error_u,error_u_H1,error_p))
 
-print_convergence_table(results)
+Infos = np.array(results) # 转成矩阵 
+savemat('/mnt/d/ngsolve_matrix/BiotBrinkman_ex2_data_withoutpenalty.mat', {"Infos": Infos})
