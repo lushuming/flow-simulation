@@ -209,9 +209,9 @@ s0 = 1e-2
 quad_mesh = False
 
 # DG space order
-order_eta = 2
-order_u = 2
-order_p = 1
+order_eta = 3
+order_u = 3
+order_p = 2
 
 # penalty parameters
 # p2-p2-p1 (50, 50, 1, 0.5, 0.05)
@@ -220,9 +220,9 @@ order_p = 1
 beta_eta = 100
 beta_u = 100
 # ghost penalty parameters
-gamma_s = 0.1
-gamma_u = 0.05
-gamma_p = 0.001
+gamma_s = 0
+gamma_u = 0
+gamma_p = 0
 
 # Manufactured exact solution for monitoring the error
 #---------------------Example 1 -----------------------
@@ -282,12 +282,12 @@ pD = exact_p
 
 # Set level set function
 # Ex1 & 2 
-# levelset = (x-1/2)**2 + (y-1/2)**2 - 1/16
+levelset = (x-1/2)**2 + (y-1/2)**2 - 1/16
 # Ex2 椭圆
-theta = 0
-Xp = (x - 0.5)*np.cos(theta) + (y - 0.5)*np.sin(theta)
-Yp = -(x - 0.5)*np.sin(theta) + (y - 0.5)*np.cos(theta)
-levelset = (Xp**2)*9 + (Yp**2)*25 - 1
+# theta = 0
+# Xp = (x - 0.5)*np.cos(theta) + (y - 0.5)*np.sin(theta)
+# Yp = -(x - 0.5)*np.sin(theta) + (y - 0.5)*np.cos(theta)
+# levelset = (Xp**2)*9 + (Yp**2)*25 - 1
 
 #### 心型线 ####
 # levelset = (x**2+y**2-1)**3 - x**2*y**3
@@ -296,7 +296,7 @@ levelset = (Xp**2)*9 + (Yp**2)*25 - 1
 
 results = []
 
-for k in range(2, 6):
+for k in range(2, 8):
     h0 = 1/2**k
     error_eta, error_u,error_p, ndof, error_eta_H1,error_u_H1 = solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p, fe, fm,fp, exact_eta, exact_u, \
                                                               exact_p,alpha,K,mu,lam,beta_eta,beta_u,gamma_s,gamma_u,gamma_p)
