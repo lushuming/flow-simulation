@@ -161,10 +161,10 @@ def solve_biotbrinkman_steady_unfitted(h0, quad_mesh, order_eta, order_u,order_p
     # # 5. 保存为 .mat 文件
     # output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp2p2p1_' + str(h0) + '_withoutpenalty.mat'
     # output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp2p2p1_' + str(h0) + '.mat'
-    output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp3p3p2_' + str(h0) + '_withoutpenalty.mat'
+    # output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp3p3p2_' + str(h0) + '_withoutpenalty.mat'
     # output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp3p3p2_' + str(h0) + '.mat'
-    savemat(output_filename, data_to_save)
-    print(f"矩阵已成功保存到文件: {output_filename}")
+    # savemat(output_filename, data_to_save)
+    # print(f"矩阵已成功保存到文件: {output_filename}")
 
     kappaminus = CutRatioGF(ci)
     kappaminus_values = kappaminus.vec.FV().NumPy()
@@ -209,20 +209,20 @@ s0 = 1e-2
 quad_mesh = False
 
 # DG space order
-order_eta = 3
-order_u = 3
-order_p = 2
+order_eta = 2
+order_u = 2
+order_p = 1
 
 # penalty parameters
 # p2-p2-p1 (50, 50, 1, 0.5, 0.05)
 # p3-p3-p2 (100, 100, 0.1, 0.001, 0.001)
 # or p3-p3-p2 (100, 100, 0.1, 0.05, 0.001)
-beta_eta = 100
-beta_u = 100
+beta_eta = 50
+beta_u = 50
 # ghost penalty parameters
-gamma_s = 0
-gamma_u = 0
-gamma_p = 0
+gamma_s = 1
+gamma_u = 0.5
+gamma_p = 0.05
 
 # Manufactured exact solution for monitoring the error
 #---------------------Example 1 -----------------------

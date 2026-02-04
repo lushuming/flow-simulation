@@ -5,7 +5,8 @@ from ngsolve.webgui import Draw
 from math import pi,e
 from numpy import linspace
 import numpy as np
-
+import scipy.sparse as sp
+from scipy.io import savemat
 
 def Stress(strain):
     return 2*mu*strain + lam*Trace(strain)*Id(2)
@@ -14,10 +15,11 @@ def solve_biotBrinkman_steady_dg(h0, order_eta, order_u,order_p, fe, fm,fp, exac
 
     # 1. Construct the mesh
     # mesh = Mesh(unit_square.GenerateMesh(maxh=h))
-    square = SplineGeometry()
+    # square = SplineGeometry()
+    geo = OCCGeometry(Circle((0.5, 0.5), 0.25).Face(), dim=2)
     # square.AddRectangle((0, 0), (1, 1),bc=1)
     
-    ngmesh = square.GenerateMesh(maxh=h0, quad_dominated=False)
+    ngmesh = geo.GenerateMesh(maxh=h0, quad_dominated=False)
     mesh = Mesh(ngmesh)
 
     E = VectorL2(mesh, order=order_eta, dirichlet=[], dgjumps=True) # space for displacement
@@ -53,8 +55,13 @@ def solve_biotBrinkman_steady_dg(h0, order_eta, order_u,order_p, fe, fm,fp, exac
     Ah = BilinearForm(fes)
     # Ae
     Ah += 2*mu*InnerProduct(strain_eta,strain_kxi)*dx + lam*div(eta)*div(kxi)*dx \
-            - (InnerProduct(mean_stress_eta,jump_kxi) + InnerProduct(mean_stress_kxi,jump_eta) - beta_eta/h*InnerProduct(jump_eta,jump_kxi))*dx(skeleton=True) \
-            - (InnerProduct(Stress(Sym(Grad(eta)))*n,kxi) + InnerProduct(Stress(Sym(Grad(kxi)))*n,eta) - beta_eta/h*InnerProduct(eta,kxi))*ds(skeleton=True)
+            - (InnerProduct(mean_stress_eta,jump_kxi) + InnerProduct(mean_stress_kxi,jump_eta))*dx(skeleton=True)  \
+            - (InnerProduct(Stress(Sym(Grad(eta)))*n,kxi) + InnerProduct(Stress(Sym(Grad(kxi)))*n,eta))*ds(skeleton=True)
+    # Ah += beta_eta/h*InnerProduct(jump_eta,jump_kxi)*dx(skeleton=True) 
+    # Ah += beta_eta/h*InnerProduct(eta,kxi)*ds(skeleton=True)
+
+    Ah +=  beta_eta/h*(2*mu*InnerProduct(jump_eta,jump_kxi)+lam*InnerProduct(jump_eta,n)*InnerProduct(jump_kxi,n)) * dx(skeleton=True) 
+    Ah += beta_eta/h*(2*mu*InnerProduct(eta,kxi) + lam*InnerProduct(eta,n)*InnerProduct(kxi,n))*ds(skeleton=True)
 
     # Be
     Ah += -alpha*(div(kxi)*p*dx - mean_p*jump_kxi*n*dx(skeleton=True) - p*kxi*n*ds(skeleton=True))
@@ -83,7 +90,10 @@ def solve_biotBrinkman_steady_dg(h0, order_eta, order_u,order_p, fe, fm,fp, exac
 
     lh = LinearForm(fes)
     # lh += fe*kxi*dx - InnerProduct(etaD,Stress(Sym(Grad(kxi)))*n)*ds(skeleton=True) + beta_eta/h*etaD*kxi*ds(skeleton=True) + alpha*pD*kxi*n*ds(skeleton=True)
-    lh += fe*kxi*dx - InnerProduct(etaD,Stress(Sym(Grad(kxi)))*n)*ds(skeleton=True) + beta_eta/h*etaD*kxi*ds(skeleton=True)
+    lh += fe*kxi*dx - InnerProduct(etaD,Stress(Sym(Grad(kxi)))*n)*ds(skeleton=True) 
+    # lh += beta_eta/h*etaD*kxi*ds(skeleton=True)
+    lh += beta_eta/h*(2*mu*InnerProduct(etaD,kxi) + lam*InnerProduct(etaD,n)*InnerProduct(kxi,n))*ds(skeleton=True) 
+
     # lh += fm*v*dx - nu*InnerProduct(uD,Grad(v)*n)*ds(skeleton=True) + nu*beta_u/h*uD*v*ds(skeleton=True) + v*n*pD*ds(skeleton=True) 
     lh += fm*v*dx - nu*InnerProduct(uD,Grad(v)*n)*ds(skeleton=True) + nu*beta_u/h*uD*v*ds(skeleton=True)
     lh += fp*q*dx - alpha*q*etaD*n*ds(skeleton=True) - q*uD*n*ds(skeleton=True)
@@ -105,6 +115,18 @@ def solve_biotBrinkman_steady_dg(h0, order_eta, order_u,order_p, fe, fm,fp, exac
 
     error_eta_H1 = sqrt(Integrate(InnerProduct(grad_error_eta,grad_error_eta)* dx, mesh))
     error_u_H1 = sqrt(Integrate(InnerProduct(grad_error_u,grad_error_u)*  dx, mesh))
+
+
+    # 计算系数矩阵的条件数
+    rows,cols,vals = Ah.mat.COO()
+    A_scipy = sp.csr_matrix((vals,(rows,cols)))
+    data_to_save = {'A': A_scipy} 
+
+    # 5. 保存为 .mat 文件
+    output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp2p2p1_' + str(h0) + '_dg.mat'
+    # output_filename = '/mnt/d/ngsolve_matrix/BiotBrinkmanp3p3p2_' + str(h0) + '_dg.mat'
+    savemat(output_filename, data_to_save)
+    print(f"矩阵已成功保存到文件: {output_filename}")
         
     return error_eta, error_u, error_p, gfu.space.ndof, error_eta_H1,error_u_H1
 
@@ -162,17 +184,17 @@ order_p = 1
 # penalty parameters
 # p2-p2-p1 beta_eta = 200, beta_u = 100
 # p3-p3-p2 beta_eta = 300, beta_u = 300
-beta_eta = 100
-beta_u = 100
+beta_eta = 50
+beta_u = 50
 gamma_p = 0
 
 # Manufactured exact solution for monitoring the error
 #---------------------Example 1 -----------------------
-# eta_x = sin(pi*x)*sin(pi*y)
-# eta_y = x*y*(x-1)*(y-1)
-# u_x = sin(pi*x) * cos(pi*y)
-# u_y = -cos(pi*x) * sin(pi*y)
-# exact_p = sin(pi*(x-y))
+eta_x = sin(pi*x)*sin(pi*y)
+eta_y = x*y*(x-1)*(y-1)
+u_x = sin(pi*x) * cos(pi*y)
+u_y = -cos(pi*x) * sin(pi*y)
+exact_p = sin(pi*(x-y))
 
 #---------------------Example 2 -----------------------
 # eta_x = sin(pi*x)*sin(pi*y) + x/lam
@@ -184,11 +206,11 @@ gamma_p = 0
 # exact_p = (pi*sin(pi*x)-2)*cos(2*pi*y)
 
 #---------------------Example 3 -----------------------
-u_x = sin(pi*x) * cos(pi*y)
-u_y = -cos(pi*x) * sin(pi*y)
-eta_x = sin(pi*x)*sin(pi*y) 
-eta_y = cos(pi*x)*cos(pi*y) 
-exact_p = sin(pi*(x-y))
+# u_x = sin(pi*x) * cos(pi*y)
+# u_y = -cos(pi*x) * sin(pi*y)
+# eta_x = sin(pi*x)*sin(pi*y) 
+# eta_y = cos(pi*x)*cos(pi*y) 
+# exact_p = sin(pi*(x-y))
 
 
 # eta_x = sin(pi*x)**2 * sin(pi*y)
@@ -230,7 +252,7 @@ pD = exact_p
 
 results = []
 
-for k in range(2, 6):
+for k in range(2, 8):
     h0 = 1/2**k
     error_eta, error_u, error_p, ndof, error_eta_H1,error_u_H1 = solve_biotBrinkman_steady_dg(h0, order_eta, order_u,order_p, fe, fm,fp, exact_eta, exact_u, exact_p, \
                                                                                mu,lam,beta_eta,beta_u,gamma_p,alpha,K)
